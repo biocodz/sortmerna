@@ -38,6 +38,8 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
  /** @file */
 
 #include <time.h>
+#include <algorithm>
+#include <cassert>
 #include <string>
 #include <vector>
 #include <deque>
@@ -1421,9 +1423,29 @@ int build_index(Runopts& opts)
 
 			st = std::chrono::high_resolution_clock::now();
 
+			// Bug 2 check: duplicates in keys_vec cause incorrect MPHF
+			assert(keys_vec.size() == number_elements && "keys_vec size != number_elements");
+			{
+				std::vector<uint64_t> sorted_keys(keys_vec);
+				std::sort(sorted_keys.begin(), sorted_keys.end());
+				auto dup = std::adjacent_find(sorted_keys.begin(), sorted_keys.end());
+				assert(dup == sorted_keys.end() && "Duplicate keys in keys_vec - BBHash will be incorrect");
+			}
+
 			using hasher_t = boomphf::SingleHashFunctor<uint64_t>;
 			using boophf_t = boomphf::mphf<uint64_t, hasher_t>;
 			boophf_t* hash = new boophf_t(keys_vec.size(), keys_vec, 1, 2.0, false, false);
+
+			// Bug 3 check: all IDs must be in [0, number_elements) AND be unique
+			{
+				std::vector<bool> seen(number_elements, false);
+				for (uint64_t k : keys_vec) {
+					uint64_t vid = hash->lookup(k);
+					assert(vid < number_elements && "BBHash assigned ID >= number_elements");
+					assert(!seen[vid] && "BBHash assigned duplicate ID - not a perfect hash");
+					seen[vid] = true;
+				}
+			}
 
 			if (opts.is_verbose) {
 				elapsed = std::chrono::high_resolution_clock::now() - st;
@@ -1544,7 +1566,10 @@ int build_index(Runopts& opts)
 				// for all 19-mers on the sequence
 				for (uint32_t j = 0; j < numwin; j++) //TESTING
 				{
-					id = static_cast<uint32_t>(hash->lookup(kmer_key >> 2));
+					// Bug 1 check: BBHash silently returns a false-positive for absent keys
+					uint64_t raw_id = hash->lookup(kmer_key >> 2);
+					assert(raw_id < number_elements && "BBHash lookup returned out-of-range id - key not in MPHF");
+					id = static_cast<uint32_t>(raw_id);
 
 					//cout << "\t" << id << "=" << (kmer_key>>2); //TESTING
 
