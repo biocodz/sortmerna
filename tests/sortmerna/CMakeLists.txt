@@ -30,14 +30,12 @@ if(WIN32)
 		alp
 		smr_objs
 		winapi
-		$<TARGET_OBJECTS:cmph>
 	)
 else()
 	target_link_libraries(tests
 		build_version
 		alp
 		smr_objs
-		$<TARGET_OBJECTS:cmph>
 	)
 endif()
 

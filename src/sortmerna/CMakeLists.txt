@@ -164,15 +164,15 @@ if(WIN32)
 		PUBLIC
 			${CMAKE_SOURCE_DIR}/include
 			$<TARGET_PROPERTY:winapi,INCLUDE_DIRECTORIES>
-			$<TARGET_PROPERTY:cmph,INCLUDE_DIRECTORIES>
+			${CMAKE_SOURCE_DIR}/3rdparty/bbhash
 			${DIRENTWIN_HOME}/include
 			${CONCURRENTQUEUE_HOME}
 	)
 else()
-	target_include_directories(smr_objs 
+	target_include_directories(smr_objs
 		PUBLIC
 			${CMAKE_SOURCE_DIR}/include
-			$<TARGET_PROPERTY:cmph,INCLUDE_DIRECTORIES>
+			${CMAKE_SOURCE_DIR}/3rdparty/bbhash
 			${CONCURRENTQUEUE_HOME}
 	)
 endif()
@@ -198,7 +198,6 @@ if(WIN32)
 		smr_objs
 		winapi
 		alp
-		$<TARGET_OBJECTS:cmph>
 		ZLIB::ZLIB
 		${ROCKSDB_LIB}
 		#RapidJSON::RapidJSON
@@ -217,7 +216,6 @@ else()
 		build_version
 		smr_objs
 		alp # this is a transitive dependency of smr_objs but the linking fails without it. Why?
-		$<TARGET_OBJECTS:cmph>
 		${ROCKSDB_LIB}
 		${CMAKE_DL_LIBS}
 		# the following are all transitive dependencies of smr_objs i.e. no need to link: 

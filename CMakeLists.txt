@@ -80,9 +80,6 @@ configure_file(src/util/build_version.cpp.in ${BUILD_VERSION_CPP} @ONLY)
 add_library(build_version STATIC ${BUILD_VERSION_CPP})
 target_include_directories(build_version PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-## build cmph
-add_subdirectory(${EXTERNAL_DEPS}/cmph)
-
 ## build alp
 add_subdirectory(${EXTERNAL_DEPS}/alp)
 

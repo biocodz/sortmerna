@@ -56,16 +56,11 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include "version.h"
 #include "build_version.h"
 #include "indexdb.hpp"
-#include "cmph.h"
+#include "BooPHF.h"
 #include "options.hpp"
 
 #if defined(_WIN32)
 #include <Winsock.h>
-const std::string ENV_TMPDIR = "TMP";
-const char PATH_SEPARATOR = '\\';
-#else
-const std::string ENV_TMPDIR = "TMPDIR";
-const char PATH_SEPARATOR = '/';
 #endif
 
 
@@ -982,139 +977,6 @@ namespace {
 	}//~printlist()
 }
 
-void get_keys_file(std::string &keys_file, Runopts &opts)
-{
-	std::stringstream ss;
-	ss << "sortmerna_keys_" << getpid() << ".txt";
-	keys_file = opts.workdir.string() + ss.str();
-
-	std::fstream ifs(keys_file, std::ios_base::out | std::ios_base::binary);
-	if (ifs.is_open())
-	{
-		ifs.close();
-	}
-	else
-	{
-		ERR("Failed writing to file: " + keys_file + " Error: " + strerror(errno));
-	}
-} //~get_keys_file
-
-/**
- * TODO: remove - not used any longer. Outdated
- *
- * Prepare the temporary file for storing keys of all s-mer (19-mer) words
- * of the reference sequences.
- * Required for CMPH to build the hash functions. See 'cmph_io_nlfile_adapter(keys)'
- */
-void get_keys_str(std::string &keys_str)
-{
-	std::stringstream ss;
-
-	char* tmpdir_env = NULL;
-	char pidStr[4000];
-
-	int32_t pid = getpid();
-	sprintf(pidStr, "%d", pid);
-
-	// try $TMPDIR, /tmp and local directories
-	bool try_further = true;
-
-	// try TMPDIR
-	tmpdir_env = getenv(ENV_TMPDIR.data());
-	if (tmpdir_env != NULL && strcmp(tmpdir_env, "") != 0)
-	{
-		std::string tmp_dir(tmpdir_env);
-		if (tmp_dir[tmp_dir.size() - 1] != PATH_SEPARATOR)
-			tmp_dir += PATH_SEPARATOR;
-
-		std::string tmp_file = tmp_dir + "test" + pidStr + ".txt";
-
-		FILE *tmp = fopen(tmp_file.data(), "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in directory [" << tmpdir_env << "]: " << strerror(errno) << std::endl
-				<< "  will try /tmp/.";
-			WARN(ss.str());
-		}
-		else
-		{
-			// remove the temporary test file
-			fclose(tmp);
-			if (remove(tmp_file.data()) != 0)
-			{
-				ss.str("");
-				ss << "Could not delete temporary file " << tmp_file.data();
-				WARN(ss.str());
-			}
-			// set working directory
-			keys_str += tmp_dir;
-			//memcpy(keys_str.data(), tmp_dir.data(), 4000);
-			try_further = false;
-		}
-	}
-
-	// try "/tmp" directory
-	if (try_further)
-	{
-		char tmp_str[4000] = "";
-		strcat(tmp_str, "/tmp/test_");
-		strcat(tmp_str, pidStr);
-		strcat(tmp_str, ".txt");
-
-		FILE *tmp = fopen(tmp_str, "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in directory /tmp/: " << strerror(errno) << std::endl
-				<< "  will try local directory.";
-			WARN(ss.str());
-		}
-		else
-		{
-			// remove the temporary test file
-			if (remove(tmp_str) != 0)
-				std::cerr << YELLOW << "  WARNING" << COLOFF << ": could not delete temporary file " << tmp_str << std::endl;
-
-			// set working directory
-			strcat(keys_str.data(), "/tmp/");
-
-			try_further = false;
-		}
-	}
-
-	// try the local directory
-	if (try_further)
-	{
-		char tmp_str[4000] = "";
-		strcat(tmp_str, "./test_");
-		strcat(tmp_str, pidStr);
-		strcat(tmp_str, ".txt");
-
-		FILE *tmp = fopen(tmp_str, "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in current directory: " << strerror(errno) << std::endl
-				<< "  Please set --tmpdir to a writable directory,"
-				<< " or change the write permissions in $TMPDIR, e.g. /tmp/ (Linux), or current directory.";
-			ERR(ss.str());
-			exit(EXIT_FAILURE);
-		}
-		else
-		{
-			// remove the temporary test file
-			if (remove(tmp_str) != 0)
-				std::cerr << YELLOW << "  WARNING" << COLOFF << ": could not delete temporary file " << tmp_str << std::endl;
-
-			// set working directory
-			strcat(keys_str.data(), "./");
-			try_further = false;
-		}
-	}
-
-	keys_str = keys_str + "sortmerna_keys_" + pidStr + ".txt";
-} // ~get_keys_str
 
 int build_index(Runopts& opts)
 {
@@ -1130,10 +992,8 @@ int build_index(Runopts& opts)
 	mask32 = (1 << opts.seed_win_len) - 1;
 	mask64 = (2ULL << ((pread_gv * 2) - 1)) - 1;
 
-	// temp file for storing keys of all s-mer (19-mer) words of the reference sequences. 
-	// Required for CMPH to build minimal perfect hash functions
-	std::string keys_file;
-	get_keys_file(keys_file, opts);
+	// vector accumulating unique 18-mer keys for each index part (used to build BBHash MPHF)
+	std::vector<uint64_t> keys_vec;
 
 	if (opts.is_verbose) {
 		INFO_NS(
@@ -1296,14 +1156,7 @@ int build_index(Runopts& opts)
 			// set the file pointer to the beginning of the current part
 			start_part = ftell(fp);
 
-			// store all s-mer (19-mer) words of the reference sequences in a file. 
-			// Required for CMPH to build minimal perfect hash functions
-			FILE *keys = fopen(keys_file.c_str(), "w+");
-			if (keys == NULL)
-			{
-				ERR("Could not open [" , keys_file , "] file for writing");
-				exit(EXIT_FAILURE);
-			}
+			keys_vec.clear();
 
 			// count of unique 19-mers in database
 			uint32_t number_elements = 0;
@@ -1501,7 +1354,7 @@ int build_index(Runopts& opts)
 					{
 						// increment number of unique 18-mers
 						number_elements++;
-						fprintf(keys, "%llu\n", (kmer_key >> 2));
+						keys_vec.push_back(kmer_key >> 2);
 					}
 
 					// ****** add the reverse 19-mer
@@ -1557,7 +1410,6 @@ int build_index(Runopts& opts)
 			// continue to build hash and positions tables
 			else index_size = 0;
 
-			rewind(keys);
 			elapsed = std::chrono::high_resolution_clock::now() - st;
 
 			if (opts.is_verbose)
@@ -1565,38 +1417,21 @@ int build_index(Runopts& opts)
 
 			// 4. build MPHF on the unique 18-mers
 			if (opts.is_verbose)
-				INFO_NS("    (2/3) building CMPH hash ..");
+				INFO_NS("    (2/3) building BBHash MPHF ..");
 
 			st = std::chrono::high_resolution_clock::now();
-			cmph_t *hash = NULL;
 
-			FILE * keys_fd = keys;
-			if (keys_fd == NULL)
-			{
-				ERR("File '", keys_file, "' not found");
-				exit(EXIT_FAILURE);
-			}
-			cmph_io_adapter_t *source = cmph_io_nlfile_adapter(keys_fd);
-
-			cmph_config_t *config = cmph_config_new(source);
-			cmph_config_set_algo(config, CMPH_CHM);
-			hash = cmph_new(config);
-			cmph_config_destroy(config);
-
-			// Destroy file adapter
-			cmph_io_nlfile_adapter_destroy(source);
-			fclose(keys_fd);
+			using hasher_t = boomphf::SingleHashFunctor<uint64_t>;
+			using boophf_t = boomphf::mphf<uint64_t, hasher_t>;
+			boophf_t* hash = new boophf_t(keys_vec.size(), keys_vec, 1, 2.0, false, false);
 
 			if (opts.is_verbose) {
 				elapsed = std::chrono::high_resolution_clock::now() - st;
 				INFO_NS(" done  [", elapsed.count(), " sec]\n");
 			}
 
-			int ret = remove(keys_file.c_str());
-			if (ret != 0)
-			{
-				WARN("Could not delete temporary file ", keys_file);
-			}
+			keys_vec.clear();
+			keys_vec.shrink_to_fit();
 
 			// 5. add ids to burst trie
 			// 6. build the positions lookup table using MPHF
@@ -1709,11 +1544,7 @@ int build_index(Runopts& opts)
 				// for all 19-mers on the sequence
 				for (uint32_t j = 0; j < numwin; j++) //TESTING
 				{
-					// character array to hold an unsigned long long integer for CMPH
-					char a[38] = { 0 };
-					sprintf(a, "%llu", (kmer_key >> 2));
-					const char *key = a;
-					id = cmph_search(hash, key, (cmph_uint32)strlen(key));
+					id = static_cast<uint32_t>(hash->lookup(kmer_key >> 2));
 
 					//cout << "\t" << id << "=" << (kmer_key>>2); //TESTING
 
@@ -1750,8 +1581,7 @@ int build_index(Runopts& opts)
 				INFO_NS("    total number of sequences in this part = ", i, "\n");
 			}
 
-			// Destroy hash
-			cmph_destroy(hash);
+			delete hash;
 
 			// *********** Check ID's in Burst trie are correct *****
 
@@ -1946,7 +1776,6 @@ int build_index(Runopts& opts)
 			}
 
 			if (opts.is_verbose) {
-				INFO_NS("      temporary file was here: ", keys_file.data(), "\n");
 				INFO_NS("      writing kmer data to ", idx_file.data(), "\n")
 			}
 

@@ -78,6 +78,7 @@ CONDA   = 'conda'
 ALL     = 'all'
 CCQUEUE = 'concurrentqueue'
 IBZIP2  = 'indexed_bzip2'
+BBHASH  = 'bbhash'
 
 ENV = None # WIN | WSL | LNX_AWS | LNX_TRAVIS
 UHOME = os.environ['USERPROFILE'] if IS_WIN else os.environ['HOME']
@@ -750,6 +751,16 @@ def indexed_bzip2_build(**kw) -> tuple[int, list[str], list[str]]:
     return rcode, sout, eout
 #END indexed_bzip2_build
 
+def bbhash_build(**kw) -> tuple[int, list[str], list[str]]:
+    '''
+    header-only BBHash (BooPHF) minimal perfect hash function library - clone only
+    '''
+    url = kw.get(BBHASH).get('url')
+    src = kw.get(BBHASH).get('src')
+    shallow = kw.get(BBHASH).get('shallow')
+    return git_clone(url, src, shallow=shallow)
+#END bbhash_build
+
 def env_check(**cfg):
     '''
     verify all pre-requisit packages/tools are present
@@ -825,7 +836,7 @@ if __name__ == "__main__":
     p0.add_argument('--winhome', dest='winhome', help='when building on WSL - home directory on Windows side e.g. /mnt/c/Users/XX')
     subpar = p0.add_subparsers(dest='name', help='package to build/process')
 
-    p_all = subpar.add_parser('all', help='build zlib + rocksdb + concurrentqueue + indexed_bzip2 + sortmerna')
+    p_all = subpar.add_parser('all', help='build zlib + rocksdb + concurrentqueue + indexed_bzip2 + bbhash + sortmerna')
     p_all.add_argument('-b', '--btype', dest='btype', default='release', help='Build type: release | debug')
     p_all.add_argument('--cmake-preset', dest='cmake_preset', help='CMake preset')
     p_all.add_argument('-c', '--clean', action='store_true', help='clean build directory')
@@ -840,6 +851,7 @@ if __name__ == "__main__":
     p_all.add_argument('--rocksdb-git', action='store_true', help='use rocksdb git repo as source. Otherwise tarball')
     p_all.add_argument('--concurrentqueue-dist', dest='concurrentqueue_dist', help='concurrentqueue installation directory')
     p_all.add_argument('--indexed-bzip2-dist', dest='indexed_bzip2_dist', help='indexed_bzip2 installation directory')
+    p_all.add_argument('--bbhash-dist', dest='bbhash_dist', help='bbhash installation directory')
     p_all.add_argument('--pt_smr', dest='pt_smr', default='t1', help='Sortmerna Linkage type t1 | t2 | t3')
     p_all.add_argument('--pt_zlib', dest='pt_zlib', help='Zlib Linkage type t1 | t2 | t3')
     p_all.add_argument('--pt_rocks', dest='pt_rocks', help='Rocksdb Linkage type t1 | t2 | t3')
@@ -871,6 +883,9 @@ if __name__ == "__main__":
 
     p_ibzip2 = subpar.add_parser('indexed_bzip2', help='clone indexed_bzip2 and init submodules')
     p_ibzip2.add_argument('--indexed-bzip2-dist', dest='indexed_bzip2_dist', help='indexed_bzip2 installation directory')
+
+    p_bbhash = subpar.add_parser('bbhash', help='clone bbhash (BooPHF header-only MPHF library)')
+    p_bbhash.add_argument('--bbhash-dist', dest='bbhash_dist', help='bbhash installation directory')
 
     subpar.add_parser('dirent', help='clone dirent')
 
@@ -930,6 +945,12 @@ if __name__ == "__main__":
     else:
         config['indexed_bzip2']['dist'] = f"{config['indexed_bzip2']['src']}"
 
+    # bbhash
+    if getattr(args, 'bbhash_dist', None):
+        config['bbhash']['dist'] = args.bbhash_dist
+    else:
+        config['bbhash']['dist'] = f"{config['bbhash']['src']}"
+
     if args.vb:
         config['vb'] = True
     if args.loglevel:
@@ -952,6 +973,8 @@ if __name__ == "__main__":
         if rcode == 0:
             rcode, sout, eout = indexed_bzip2_build(**config)
         if rcode == 0:
+            rcode, sout, eout = bbhash_build(**config)
+        if rcode == 0:
             rcode, sout, eout = smr_build(btype=getattr(args, 'btype', 'release'), **config)
     elif args.name == ZLIB:
         rcode, outl, errl = zlib_build(**config)
@@ -967,6 +990,8 @@ if __name__ == "__main__":
         concurrentqueue_build(**config)
     elif args.name == IBZIP2:
         indexed_bzip2_build(**config)
+    elif args.name == BBHASH:
+        bbhash_build(**config)
     elif args.name == DIRENT:
         url = config[DIRENT].get('url')
         path = config[DIRENT].get('src')

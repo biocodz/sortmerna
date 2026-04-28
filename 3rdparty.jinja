@@ -53,6 +53,14 @@ indexed_bzip2:
   src: 3rdparty/indexed_bzip2 # relative to sortmerna
   dist: {{indexed_bzip2_dist}} # '--indexed-bzip2-dist' or default '3rdparty/indexed_bzip2' (setup.py)
 
+bbhash:
+  note: header-only minimal perfect hash function (BBHash/BooPHF) - replaces cmph
+  url: https://github.com/rizkg/BBHash.git
+  commit: master
+  shallow: true
+  src: 3rdparty/bbhash # relative to sortmerna
+  dist: {{bbhash_dist}} # '--bbhash-dist' or default '3rdparty/bbhash' (setup.py)
+
 dirent:
   note: a single header package - just clone and use (on Windows)
   url: https://github.com/tronkko/dirent
