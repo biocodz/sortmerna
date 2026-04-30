@@ -39,8 +39,9 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 
 #include <sys/types.h>
 
-#include "ssw.h"
 #include "common.hpp"
+
+extern const char map_nt[122];
 #include "options.hpp"
 
 

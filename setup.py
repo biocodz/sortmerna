@@ -77,8 +77,9 @@ CMAKE   = 'cmake'
 CONDA   = 'conda'
 ALL     = 'all'
 CCQUEUE = 'concurrentqueue'
-IBZIP2  = 'indexed_bzip2'
-BBHASH  = 'bbhash'
+IBZIP2    = 'indexed_bzip2'
+BBHASH    = 'bbhash'
+PARASAIL  = 'parasail'
 
 ENV = None # WIN | WSL | LNX_AWS | LNX_TRAVIS
 UHOME = os.environ['USERPROFILE'] if IS_WIN else os.environ['HOME']
@@ -645,6 +646,8 @@ def smr_build(ver:str=None,
                         else kw[ROCKS].get('dist') or Path(f'build/{rocksdb_src}/dist').absolute()
     zlib_dist = sysroot / 'sortmerna' / kw[ZLIB].get('dist') if is_conda_cpp and sysroot \
                     else kw[ZLIB].get('dist') or Path(f"build/{kw[ZLIB].get('src')}/dist").absolute()
+    parasail_dist = sysroot / 'sortmerna' / kw[PARASAIL].get('dist') if is_conda_cpp and sysroot \
+                        else kw[PARASAIL].get('dist') or Path(f"build/{kw[PARASAIL].get('src')}/dist").absolute()
     conque_home = kw[CCQUEUE].get('dist') or kw[CCQUEUE].get('src')
     install_dir = Path(build_dir) / 'dist' if is_conda_cpp and sysroot else 'dist'
     
@@ -684,6 +687,7 @@ def smr_build(ver:str=None,
             raise ValueError(msg)
         cmd.append(f'-DZLIB_ROOT={zlib_dist}')
         cmd.append(f'-DROCKSDB_DIST={rocksdb_dist}')
+        cmd.append(f'-DPARASAIL_DIST={parasail_dist}')
         cmd.append(f'-DCONCURRENTQUEUE_HOME={conque_home}')
         cmd.append(f'-DCMAKE_INSTALL_PREFIX={str(install_dir)}')
     if kw.get('vb'):
@@ -760,6 +764,41 @@ def bbhash_build(**kw) -> tuple[int, list[str], list[str]]:
     shallow = kw.get(BBHASH).get('shallow')
     return git_clone(url, src, shallow=shallow)
 #END bbhash_build
+
+def parasail_build(**kw) -> tuple[int, list[str], list[str]]:
+    '''
+    Build parasail SIMD alignment library using CMake (replaces SSW)
+    '''
+    ST = '[parasail_build]'
+    src = kw.get(PARASAIL).get('src')
+    build_dir = Path(kw.get(PARASAIL).get('build') or f'build/{src}')
+    dist_dir = Path(kw.get(PARASAIL).get('dist') or f'build/{src}/dist').absolute()
+    url = kw.get(PARASAIL).get('url')
+    shallow = kw.get(PARASAIL).get('shallow', False)
+    btype = kw.get(PARASAIL).get('cmake_build_type', 'Release')
+
+    rcode, sout, eout = git_clone(url, src, shallow=shallow)
+    if rcode != 0:
+        return rcode, sout, eout
+
+    Path(build_dir).mkdir(parents=True, exist_ok=True)
+
+    cmd = ['cmake', '-S', src, '-B', str(build_dir),
+           '-DBUILD_SHARED_LIBS=OFF',
+           f'-DCMAKE_INSTALL_PREFIX={dist_dir}',
+           f'-DCMAKE_BUILD_TYPE={btype}',
+           '-DCMAKE_POLICY_VERSION_MINIMUM=3.5']
+    rcode, sout, eout = proc_run(cmd, capture=True)
+    if rcode:
+        print(f'{ST} cmake configure failed: {eout}')
+        return rcode, sout, eout
+
+    cmd = ['cmake', '--build', str(build_dir), '--target', 'install', '--config', btype]
+    rcode, sout, eout = proc_run(cmd, capture=True)
+    if rcode:
+        print(f'{ST} cmake build failed: {eout}')
+    return rcode, sout, eout
+#END parasail_build
 
 def env_check(**cfg):
     '''
@@ -852,6 +891,7 @@ if __name__ == "__main__":
     p_all.add_argument('--concurrentqueue-dist', dest='concurrentqueue_dist', help='concurrentqueue installation directory')
     p_all.add_argument('--indexed-bzip2-dist', dest='indexed_bzip2_dist', help='indexed_bzip2 installation directory')
     p_all.add_argument('--bbhash-dist', dest='bbhash_dist', help='bbhash installation directory')
+    p_all.add_argument('--parasail-dist', dest='parasail_dist', help='parasail installation directory')
     p_all.add_argument('--pt_smr', dest='pt_smr', default='t1', help='Sortmerna Linkage type t1 | t2 | t3')
     p_all.add_argument('--pt_zlib', dest='pt_zlib', help='Zlib Linkage type t1 | t2 | t3')
     p_all.add_argument('--pt_rocks', dest='pt_rocks', help='Rocksdb Linkage type t1 | t2 | t3')
@@ -886,6 +926,9 @@ if __name__ == "__main__":
 
     p_bbhash = subpar.add_parser('bbhash', help='clone bbhash (BooPHF header-only MPHF library)')
     p_bbhash.add_argument('--bbhash-dist', dest='bbhash_dist', help='bbhash installation directory')
+
+    p_parasail = subpar.add_parser('parasail', help='build parasail SIMD alignment library')
+    p_parasail.add_argument('--parasail-dist', dest='parasail_dist', help='parasail installation directory')
 
     subpar.add_parser('dirent', help='clone dirent')
 
@@ -951,6 +994,12 @@ if __name__ == "__main__":
     else:
         config['bbhash']['dist'] = f"{config['bbhash']['src']}"
 
+    # parasail
+    if getattr(args, 'parasail_dist', None):
+        config['parasail']['dist'] = args.parasail_dist
+    else:
+        config['parasail']['dist'] = f"build/{config['parasail']['src']}/dist"
+
     if args.vb:
         config['vb'] = True
     if args.loglevel:
@@ -975,6 +1024,8 @@ if __name__ == "__main__":
         if rcode == 0:
             rcode, sout, eout = bbhash_build(**config)
         if rcode == 0:
+            rcode, sout, eout = parasail_build(**config)
+        if rcode == 0:
             rcode, sout, eout = smr_build(btype=getattr(args, 'btype', 'release'), **config)
     elif args.name == ZLIB:
         rcode, outl, errl = zlib_build(**config)
@@ -992,6 +1043,8 @@ if __name__ == "__main__":
         indexed_bzip2_build(**config)
     elif args.name == BBHASH:
         bbhash_build(**config)
+    elif args.name == PARASAIL:
+        parasail_build(**config)
     elif args.name == DIRENT:
         url = config[DIRENT].get('url')
         path = config[DIRENT].get('src')

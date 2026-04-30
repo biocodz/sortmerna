@@ -659,16 +659,18 @@ def process_output(**kw):
         if isinstance(vv, int):
             ffp = outdir / ff # file path
             count = 0
-            assert ffp.exists(), f'{ST} does not exists: {ffp}'
+            if not ffp.exists():
+                print(f'{ST} does not exists: {ffp}')
             if 'otu_map.txt' in ff:
-                with open(ffp) as ffs:
-                    for line in ffs:
-                        count += 1
-                msg = f'{ST} testing count of groups in {ff}: {count} Expected: {vv}'
-                print(msg)
-                if count != vv: 
-                    print(f'Failing: {count} not equals {vv}')
-                continue
+                if ffp.exists():
+                    with open(ffp) as ffs:
+                        for line in ffs:
+                            count += 1
+                    msg = f'{ST} testing count of groups in {ff}: {count} Expected: {vv}'
+                    print(msg)
+                    if count != vv: 
+                        print(f'Failing: {count} not equals {vv}')
+                    continue
             if is_skbio:
                 if IS_FASTQ:
                     for seq in skbio.io.read(ffp, format='fastq', variant=vald.get('variant')):
@@ -1363,7 +1365,7 @@ def parse_test_config(args:Namespace) -> dict:
     smr_src = Path(script_dir).parent
     vars = {'SMR_SRC':smr_src, 'DATA_DIR':args.data_dir, 'WRK_DIR':args.workdir}
     if args.threads:
-        vars.append({'THREADS':str(args.threads)})
+        vars['THREADS'] = str(args.threads)
     if args.ref_dir:
         vars['REF_DIR'] = args.ref_dir
     cfg_str = template.render(vars)

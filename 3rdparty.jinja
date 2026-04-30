@@ -61,6 +61,15 @@ bbhash:
   src: 3rdparty/bbhash # relative to sortmerna
   dist: {{bbhash_dist}} # '--bbhash-dist' or default '3rdparty/bbhash' (setup.py)
 
+parasail:
+  note: SIMD-accelerated pairwise sequence alignment library (replaces SSW)
+  url: https://github.com/jeffdaily/parasail.git
+  commit: master
+  shallow: true
+  src: 3rdparty/parasail
+  build: build/3rdparty/parasail
+  dist: {{parasail_dist}} # '--parasail-dist' or default 'build/3rdparty/parasail/dist' (setup.py)
+
 dirent:
   note: a single header package - just clone and use (on Windows)
   url: https://github.com/tronkko/dirent

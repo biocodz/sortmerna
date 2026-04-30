@@ -19,6 +19,26 @@ if(NOT TARGET rapidgzip::rapidgzip)
 	add_subdirectory(${INDEXED_BZIP2_HOME} ${CMAKE_BINARY_DIR}/indexed_bzip2_src EXCLUDE_FROM_ALL)
 endif()
 
+# parasail: SIMD-accelerated pairwise sequence alignment (replaces SSW)
+if(DEFINED CACHE{PARASAIL_DIST})
+	find_library(PARASAIL_LIB parasail
+		PATHS ${PARASAIL_DIST}/lib ${PARASAIL_DIST}/lib64
+		NO_DEFAULT_PATH
+	)
+	find_path(PARASAIL_INCLUDE_DIR parasail.h
+		PATHS ${PARASAIL_DIST}/include
+		NO_DEFAULT_PATH
+	)
+else()
+	find_library(PARASAIL_LIB parasail)
+	find_path(PARASAIL_INCLUDE_DIR parasail.h)
+endif()
+if(PARASAIL_LIB AND PARASAIL_INCLUDE_DIR)
+	message("parasail found: lib=${PARASAIL_LIB} include=${PARASAIL_INCLUDE_DIR}")
+else()
+	message(FATAL_ERROR "parasail not found. Build it first: python setup.py parasail")
+endif()
+
 #include(FindZLIB)
 if (DEFINED CACHE{ZLIB_ROOT})
 	message("searching ZLIB in ${ZLIB_ROOT}")
@@ -133,7 +153,6 @@ set(SMR_SRCS
 	readstats.cpp
 	references.cpp
 	refstats.cpp
-	ssw.c
 	traverse_bursttrie.cpp
 	util.cpp
 	otumap.cpp
@@ -156,6 +175,7 @@ target_link_libraries(smr_objs
 		${ROCKSDB_LIB}
 		ZLIB::ZLIB
 		rapidgzip::rapidgzip
+		${PARASAIL_LIB}
 		#RapidJSON::RapidJSON
 )
 if(WIN32)
@@ -167,6 +187,7 @@ if(WIN32)
 			${CMAKE_SOURCE_DIR}/3rdparty/bbhash
 			${DIRENTWIN_HOME}/include
 			${CONCURRENTQUEUE_HOME}
+			${PARASAIL_INCLUDE_DIR}
 	)
 else()
 	target_include_directories(smr_objs
@@ -174,6 +195,7 @@ else()
 			${CMAKE_SOURCE_DIR}/include
 			${CMAKE_SOURCE_DIR}/3rdparty/bbhash
 			${CONCURRENTQUEUE_HOME}
+			${PARASAIL_INCLUDE_DIR}
 	)
 endif()
 

@@ -103,24 +103,6 @@ typedef pair<uint32_t,uint32_t> uint32pair;
 */
 void find_lis(deque<pair<uint32_t, uint32_t> > &a, vector<uint32_t> &b);
 
-/*! @brief struct alignment_struct
-   holds the index of the minimum and maximum scoring
-   alignments in an array of alignments pointed to by
-   s_align* ptr */
-struct alignment_struct
-{
-  uint32_t max_size; // max size of s_align array
-  uint32_t size; // actual size of s_align array
-  uint32_t min_index;
-  uint32_t max_index;
-  s_align* ptr;
-  alignment_struct(): max_size(0), size(0), min_index(0), max_index(0), ptr(0) {}
-  alignment_struct(uint32_t max_size,
-                   uint32_t size,
-                   uint32_t min,
-                   uint32_t max,
-                   s_align* p) : max_size(max_size), size(size), min_index(min), max_index(max), ptr(p) {}
-};
 /*
  * called on each idx * part * read * strand * [1..max opts.skiplengths[index_num].size (3 by default)]
  *

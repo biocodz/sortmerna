@@ -32,18 +32,18 @@ validate:
       num_hits:       99999
       num_fail:           1
       n_yid_ycov:     47981 # lin:43678  pass SW + %Cov + %ID
-      n_denovo:        4441 # lin:11080  (52018 420) pass SW & fail (%Cov & %ID)   num_denovo + num_pass_id_cov = num_hits
-      num_groups:       265 # LIN:257, WIN:4441
+      n_denovo:        4414 # lin:11080  (52018 420) pass SW & fail (%Cov & %ID)   num_denovo + num_pass_id_cov = num_hits
+      num_groups:       264
     aligned.fa.gz:       99999
     other.fa.gz:             1
     aligned_denovo.fa.gz: 4441
-    otu_map.txt:        265
+    otu_map.txt:           264
     aligned.blast.gz:
       num_recs:       99999 # num_pass_id_cov + num_denovo + num_y_id_n_cov + num_n_id_y_cov = 19995 = num_hits
-      n_yid_ycov:     47981 # lin:43678  num_pass_id ⋂ num_pass_cov
-      n_yid_ncov:      1513 # lin:6571   ID + !COV
-      n_nid_ycov:     46064 # lin:38670  !ID + COV
-      n_denovo:        4441 # lin:11080  !ID + !COV 
+      n_yid_ycov:     47981 # num_pass_id ⋂ num_pass_cov
+      n_yid_ncov:      1513 # ID + !COV
+      n_nid_ycov:     46064 # !ID + COV
+      n_denovo:        4414 # !ID + !COV 
   time:
     wsl_ubuntu_24.04.2_LTS_xps15i9_16_32:  # data/sortmerna/logs/20260423_090702_run_t3_1_xps15i9_wsl_v500.txt
       5.0.0:  # 20260423 Thu
