@@ -1,0 +1,51 @@
+# t39:
+name: issue 207 - multiple and repeated short reads 
+      are not filtered as expected because of the low stistical significance
+info: |
+  xxx
+        input type         |               output type                  |    alignment type
+    refs  reads  zip  pair | pair_in  pair_out  out2  sout  zout  other | best  N  min_lis seeds
+     1      1     1    0       0         0       0     0     0      0      1    1     2      2
+  
+  sortmerna -m 4096 -a 4 -L 8 --fastx --blast 1 --workdir test 
+    --num_alignments 0 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
+  sortmerna -m 4096 -a 4 -L 8 --fastx --blast 1 --workdir test 
+    --best 0 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
+  sortmerna -m 4096 -a 4 -L 10 --fastx --blast 1 --workdir test 
+    --best 0 -min_lis 1 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
+args:
+  -ref: [ {{ REF_DIR }}/rRNA_databases/silva-euk-28s-id98.fasta ]
+  -reads: [ {{ DATA_DIR if DATA_DIR }}/smr_iss_207_20200123_test.fq.gz ]  # 1.5M reads
+  -fastx:
+  -blast: '1'
+  -e: '100'
+  -threads: '{{THREADS or 8}}'
+  -workdir: {{ WRK_DIR }}
+validate:
+  func:
+  variant: sanger
+  files:
+    aligned.log:
+      num_reads: 15000000
+      num_hits:    798426 #  5.32
+      num_fail:  14201574 # 94.68
+    aligned.blast.gz:
+      num_recs:    798426
+      n_yid_ycov:       0 
+      n_yid_ncov:       0 
+      n_nid_ycov:       0 
+      n_denovo:         0
+    aligned.fq.gz: 798426
+time:
+  wsl_ubuntu_24.04.2_LTS_xps15i9_16_32:  # data/sortmerna/logs/20260503_09xxxx_t39_xps15i9_wsl_ubuntu_v540.txt
+    5.4.0:  # 20260503 Sun
+      threads: 8
+      times:
+        # indexing  read_count  readfeed  align  summary  report   tot,sec
+        -  38.52      3.04        5.73    766.11  0.37    62.78     25.23
+  win_8_16:  # Windows 10 + 8 CPUs + 16GB RAM
+    4-3-3:  # 20210521
+      threads: 8
+      times: 
+        # indexing  read count  readfeed  align  summary  report
+        -     0         30        202     1546      1      132
