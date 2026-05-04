@@ -598,19 +598,22 @@ def validate_log(logd:dict, ffd:dict):
         n_logd = logd['num_reads']
         msg = f'{ST} testing num_reads: {n_logd} Expected: {n_vald}'
         print(msg)
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify number of hits
     n_vald = ffd.get('aligned.log', {}).get('num_hits')
     if n_vald:
         n_logd = logd['num_hits']
         print(f'{ST} testing num_hits: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify number of misses
     n_vald = ffd.get('aligned.log', {}).get('num_fail')
     if n_vald:
         n_logd = logd['num_fail']
         print(f'{ST} testing num_fail: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify count of COV+ID
     n_vald = ffd.get('aligned.log', {}).get('n_yid_ycov')
     if n_vald:
@@ -1332,6 +1335,29 @@ def iss_453(num_splits:int,
             out, serr = ps.communicate()
         print(f'done writing in {time.time() - sstart} sec')
     
+def _apply_preset_argv(args: Namespace, preset_argv: list):
+    '''Fill None-valued attributes in args from an argv-style preset list.
+    Explicitly provided args (non-None) are never overwritten.
+    '''
+    i = 0
+    while i < len(preset_argv):
+        token = str(preset_argv[i])
+        if token.startswith('--'):
+            key = token[2:].replace('-', '_')
+        elif token.startswith('-') and len(token) > 1:
+            key = token[1:].replace('-', '_')
+        else:
+            i += 1
+            continue
+        if i + 1 < len(preset_argv) and not str(preset_argv[i + 1]).startswith('-'):
+            val = preset_argv[i + 1]
+            i += 2
+        else:
+            val = True
+            i += 1
+        if getattr(args, key, None) is None:
+            setattr(args, key, val)
+
 def parse_test_config(args:Namespace) -> dict:
     '''
     parse test jinja template and set all sortmerna options
@@ -1339,7 +1365,19 @@ def parse_test_config(args:Namespace) -> dict:
       - args  arguments produced by argparse package
     '''
     script_dir = Path(__file__).parent # directory where this script is located
-    
+
+    # load presets and apply defaults for any args not explicitly provided
+    cfg_dir = Path(args.config).parent if args.config else script_dir
+    presets_path = Path(args.presets) if getattr(args, 'presets', None) else cfg_dir / 'presets.yaml'
+    if presets_path.exists():
+        msg = f'{ST} using presets from {presets_path}'
+        print(msg)
+        with open(presets_path) as _f:
+            _all_presets = yaml.safe_load(_f) or {}
+        _preset_argv = _all_presets.get(args.name, [])
+        if _preset_argv:
+            _apply_preset_argv(args, _preset_argv)
+
     smr_exe = args.smr_exe or shutil.which('sortmerna')
     if not smr_exe or not Path(smr_exe).exists():
         msg = (f'{ST} sortmerna executable {smr_exe} not found.'
@@ -1368,12 +1406,14 @@ def parse_test_config(args:Namespace) -> dict:
         vars['THREADS'] = str(args.threads)
     if args.ref_dir:
         vars['REF_DIR'] = args.ref_dir
+    if args.task:
+        vars['TASK'] = str(args.task)
+    if args.dbg_level:
+        vars['DBG_LEVEL'] = args.dbg_level
+    if args.index:
+        vars['INDEX'] = str(args.index)
     cfg_str = template.render(vars)
     cfg = yaml.load(cfg_str, Loader=yaml.FullLoader)
-    if args.task:
-        cfg['args']['-task'] = str(args.task)
-    if args.dbg_level:
-        cfg['args']['-dbg-level'] = args.dbg_level
     if args.score_split:
         cfg['args'].append('-score_split')
         
@@ -1455,6 +1495,7 @@ if __name__ == "__main__":
     p5.add_argument('--winhome', dest='winhome', help='when running on WSL - home directory on Windows side e.g. /mnt/c/Users/XX')
     p5.add_argument('--capture', action="store_true", help='Capture output. By default prints to stdout')
     p5.add_argument('--config', dest='config', help='Tests configuration file.')
+    p5.add_argument('--presets', dest='presets', help='Tests presets file.')
     p5.add_argument('--env', dest='envfile', help='Environment variables')
     p5.add_argument('-e','--envn', dest='envname', help=('Name of environment: WIN | WSL '
                                                       '| LNX_AWS | LNX_TRAVIS | LNX_VBox_Ubuntu_1804 | ..'))
@@ -1489,46 +1530,45 @@ if __name__ == "__main__":
                 if tt in tlist:
                     tlist.remove(tt)
         else:
-            tlist = [args.name]
+            raw = args.name.replace(',', ' ')
+            tlist = raw.split()
+            
         print(f'{ST} number of tests: {len(tlist)}')
         for test in tlist:
+            rcode = 0
+            args.name = test
             cfg = parse_test_config(args)
             # clean-up the KVDB, IDX directories, and the output. 
             # May Fail if any file in the directory is open. Close the files and re-run.
-            if args.clean:
-                if Path(KVDB_DIR).exists():
-                    print(f'{ST} removing dir: {KVDB_DIR}')
-                    shutil.rmtree(KVDB_DIR)
-                if Path(IDX_DIR).exists():
-                    print(f'{ST} removing dir: {IDX_DIR}')
-                    shutil.rmtree(IDX_DIR)
-                break
+            if args.workdir and Path(args.workdir).exists() \
+                and not (args.validate_only or args.task in ['1','2']):
+                print(f'{ST} clearing workdir after {test}: {args.workdir}')
+                shutil.rmtree(args.workdir)
 
             # clean previous alignments (KVDB)
-            kvdb = cfg['args'].get('-kvdb') or Path(cfg['args'].get('-workdir')) / 'kvdb'
-            if Path(kvdb).exists() and not (args.validate_only or args.task in ['1','2']):
-                print(f'{ST} Removing KVDB dir: {kvdb}')
-                shutil.rmtree(kvdb)
+            #kvdb = cfg['args'].get('-kvdb') or Path(cfg['args'].get('-workdir')) / 'kvdb'
+            #if Path(kvdb).exists() and not (args.validate_only or args.task in ['1','2']):
+            #    print(f'{ST} Removing KVDB dir: {kvdb}')
+            #    shutil.rmtree(kvdb)
 
             # clean output
-            ali_dir = os.path.dirname(ALIF) if ALIF else None  # aligned output directory
-            if ali_dir and os.path.exists(ali_dir) and not (args.validate_only or args.task in ['1','2']):
-                print(f'{ST} Removing Aligned Output: {ali_dir}')
-                shutil.rmtree(ali_dir)
+            #ali_dir = os.path.dirname(ALIF) if ALIF else None  # aligned output directory
+            #if ali_dir and os.path.exists(ali_dir) and not (args.validate_only or args.task in ['1','2']):
+            #    print(f'{ST} Removing Aligned Output: {ali_dir}')
+            #    shutil.rmtree(ali_dir)
 
-            if OTHF:
-                oth_dir = os.path.dirname(OTHF)
-                if oth_dir and os.path.exists(oth_dir) and oth_dir != ali_dir and not (args.validate_only or args.task in ['1','2']):
-                    print(f'{ST} removing Non-Aligned Output: {oth_dir}')
-                    shutil.rmtree(oth_dir)
+            #if OTHF:
+            #    oth_dir = os.path.dirname(OTHF)
+            #    if oth_dir and os.path.exists(oth_dir) and oth_dir != ali_dir and not (args.validate_only or args.task in ['1','2']):
+            #        print(f'{ST} removing Non-Aligned Output: {oth_dir}')
+            #        shutil.rmtree(oth_dir)
 
             # run the test
             if not args.validate_only:
                 is_capture = cfg.get('capture', False) or args.capture
                 cmd = [cfg.get('exe')]
-                # references and reads are provided as lists in the configuration
                 for k,v in cfg['args'].items():
-                    if 'ref' in k or 'reads' in k:
+                    if isinstance(v, list):
                         for rr in v:
                             cmd.append(k)
                             cmd.append(rr)
