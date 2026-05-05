@@ -40,6 +40,8 @@ def mock_missing(name):
 
 import os
 import sys
+import struct
+import ctypes
 import subprocess
 import platform
 import re
@@ -1414,7 +1416,7 @@ def parse_test_config(args:Namespace) -> dict:
         vars['INDEX'] = str(args.index)
     cfg_str = template.render(vars)
     cfg = yaml.load(cfg_str, Loader=yaml.FullLoader)
-    if args.score_split:
+    if getattr(args, 'score_split', False):
         cfg['args'].append('-score_split')
         
     cfg['exe'] = smr_exe
@@ -1428,6 +1430,349 @@ def get_dict_val(path:str, nested_dict:dict):
     for k in path.split(':'):
         vv = vv.get(k) or {}
     return vv
+
+def _parse_stats_binary(fpath: Path):
+    '''
+    Parse sortmerna *.stats binary file.
+    Returns (stats_dict, fasta_filename_str).
+
+    Binary layout (native little-endian on LP64 Linux):
+      size_t      filesize
+      uint32_t    fasta_len
+      char[]      fasta_filename  (fasta_len bytes, null-terminated)
+      double[4]   background_freq (A, C, G, T)
+      uint64_t    full_len
+      uint32_t    seed_win_len
+      uint64_t    numseq
+      uint16_t    part_num
+      index_parts_stats[part_num]:
+          unsigned long  start_part    (8 bytes on LP64)
+          unsigned long  seq_part_size (8 bytes on LP64)
+          uint32_t       numseq_part
+          uint32_t       _pad          (compiler trailing padding)
+      uint32_t    num_sq
+      [for each SAM SQ header:]
+          uint32_t  len_id
+          char[]    sequence_id (len_id bytes, no null terminator)
+          uint32_t  len_seq
+    '''
+    class _PartStats(ctypes.Structure):
+        _fields_ = [
+            ('start_part',    ctypes.c_ulong),
+            ('seq_part_size', ctypes.c_ulong),
+            ('numseq_part',   ctypes.c_uint32),
+        ]
+    part_size = ctypes.sizeof(_PartStats)  # 24 on LP64 (4 bytes trailing padding)
+
+    with open(fpath, 'rb') as f:
+        (filesize,)     = struct.unpack('<Q', f.read(8))
+        (fasta_len,)    = struct.unpack('<I', f.read(4))
+        fasta_filename  = f.read(fasta_len).rstrip(b'\x00').decode('utf-8', errors='replace')
+        bg_freq         = struct.unpack('<4d', f.read(32))
+        (full_len,)     = struct.unpack('<Q', f.read(8))
+        (seed_win_len,) = struct.unpack('<I', f.read(4))
+        (numseq,)       = struct.unpack('<Q', f.read(8))
+        (part_num,)     = struct.unpack('<H', f.read(2))
+        parts = []
+        for _ in range(part_num):
+            raw = f.read(part_size)
+            start_part, seq_part_size, numseq_part = struct.unpack_from('<QQI', raw)
+            parts.append({'numseq_part': numseq_part, 'seq_part_size': seq_part_size})
+
+    stats = {
+        'numseq':       numseq,
+        'full_len':     full_len,
+        'part_num':     part_num,
+        'seed_win_len': seed_win_len,
+        'background_freq': {
+            'A': round(bg_freq[0], 4),
+            'C': round(bg_freq[1], 4),
+            'G': round(bg_freq[2], 4),
+            'T': round(bg_freq[3], 4),
+        },
+        'parts': parts,
+    }
+    return stats, fasta_filename
+
+
+def _parse_kmer_binary(fpath: Path) -> dict:
+    '''
+    Parse *.kmer_N.dat: (1 << seed_win_len) consecutive uint32_t kmer counts.
+    '''
+    data = fpath.read_bytes()
+    n = len(data) // 4
+    counts = struct.unpack(f'<{n}I', data)
+    return {
+        'num_nonzero': sum(1 for c in counts if c > 0),
+        'total_count': sum(counts),
+        'max_count':   max(counts) if counts else 0,
+    }
+
+
+def _parse_pos_binary(fpath: Path) -> dict:
+    '''
+    Parse *.pos_N.dat:
+      uint32_t number_elements
+      for each element:
+        uint32_t size
+        seq_pos[size]  (seq_pos = {uint32_t pos, uint32_t seq} = 8 bytes each)
+    '''
+    total_positions = 0
+    max_positions   = 0
+    with open(fpath, 'rb') as f:
+        raw = f.read(4)
+        if len(raw) < 4:
+            return {}
+        (num_elements,) = struct.unpack('<I', raw)
+        for _ in range(num_elements):
+            raw = f.read(4)
+            if len(raw) < 4:
+                break
+            (size,) = struct.unpack('<I', raw)
+            total_positions += size
+            if size > max_positions:
+                max_positions = size
+            f.seek(size * 8, 1)  # skip seq_pos[size]: each is 2 x uint32_t
+    return {
+        'num_elements':    num_elements,
+        'total_positions': total_positions,
+        'max_positions':   max_positions,
+    }
+
+
+def _collect_ref_index_stats(idx_dir: Path, ref_path: str) -> dict:
+    '''
+    Locate the index files for ref_path inside idx_dir by scanning *.stats files
+    and matching the embedded fasta_filename field. Returns stats dict.
+    The index prefix is a std::hash of the ref basename, so it cannot be derived
+    directly; instead we read each stats file until we find the matching one.
+    '''
+    ST = '[_collect_ref_index_stats]'
+    ref_resolved = str(Path(ref_path).resolve())
+    matched_prefix = None
+    matched_stats  = None
+
+    for sf in sorted(idx_dir.glob('*.stats')):
+        try:
+            sd, fasta_fn = _parse_stats_binary(sf)
+        except Exception as ex:
+            print(f'{ST} warning: could not parse {sf}: {ex}')
+            continue
+        stored_resolved = str(Path(fasta_fn).resolve())
+        if stored_resolved == ref_resolved or fasta_fn == ref_path:
+            matched_prefix = sf.with_suffix('')  # strip .stats -> bare hash path
+            matched_stats  = sd
+            break
+
+    if matched_prefix is None:
+        print(f'{ST} no index found for {ref_path} in {idx_dir}')
+        return {}
+
+    result = {'stats': matched_stats}
+
+    # File sizes: stats file + per-partition data files
+    files_stats = {
+        'stats': sf.stat().st_size,
+    }
+    for part_idx in range(matched_stats['part_num']):
+        for pfx in ('bursttrie', 'pos', 'kmer'):
+            fname = f'{pfx}_{part_idx}.dat'
+            fp = Path(f'{matched_prefix}.{fname}')
+            if fp.exists():
+                files_stats[fname] = fp.stat().st_size
+    result['files'] = files_stats
+
+    kmer_file = Path(f'{matched_prefix}.kmer_0.dat')
+    if kmer_file.exists():
+        result['kmer'] = _parse_kmer_binary(kmer_file)
+
+    pos_file = Path(f'{matched_prefix}.pos_0.dat')
+    if pos_file.exists():
+        result['pos'] = _parse_pos_binary(pos_file)
+
+    return result
+
+
+def _build_indices_yaml(indices_stats: dict, indent: int = 2) -> str:
+    '''Render indices_stats as an indented YAML block starting with "indices:".'''
+    p = ' ' * indent
+    p2 = p + '  '
+    p4 = p2 + '  '
+    p6 = p4 + '  '
+    lines = [f'{p}indices:']
+    for ref_base, rdata in indices_stats.items():
+        lines.append(f'{p2}{ref_base}:')
+        if 'stats' in rdata:
+            s = rdata['stats']
+            bf = s['background_freq']
+            lines.append(f'{p4}stats:')
+            lines.append(f'{p6}numseq: {s["numseq"]}')
+            lines.append(f'{p6}full_len: {s["full_len"]}')
+            lines.append(f'{p6}part_num: {s["part_num"]}')
+            lines.append(f'{p6}seed_win_len: {s["seed_win_len"]}')
+            lines.append(f'{p6}background_freq: {{A: {bf["A"]}, C: {bf["C"]}, G: {bf["G"]}, T: {bf["T"]}}}')
+            if s.get('parts'):
+                lines.append(f'{p6}parts:')
+                for part in s['parts']:
+                    lines.append(f'{p6}  - numseq_part: {part["numseq_part"]}')
+                    lines.append(f'{p6}    seq_part_size: {part["seq_part_size"]}')
+        if 'files' in rdata:
+            lines.append(f'{p4}files:')
+            for fname, size in rdata['files'].items():
+                lines.append(f'{p6}{fname}: {size}')
+        if 'kmer' in rdata:
+            k = rdata['kmer']
+            lines.append(f'{p4}kmer:')
+            lines.append(f'{p6}num_nonzero: {k["num_nonzero"]}')
+            lines.append(f'{p6}total_count: {k["total_count"]}')
+            lines.append(f'{p6}max_count: {k["max_count"]}')
+        if 'pos' in rdata:
+            pos = rdata['pos']
+            lines.append(f'{p4}pos:')
+            lines.append(f'{p6}num_elements: {pos["num_elements"]}')
+            lines.append(f'{p6}total_positions: {pos["total_positions"]}')
+            lines.append(f'{p6}max_positions: {pos["max_positions"]}')
+    return '\n'.join(lines) + '\n'
+
+
+def _update_jinja_indices(jinja_file: Path, indices_stats: dict):
+    '''
+    Insert or replace the validate:indices block in a jinja template file.
+    Inserts before "runtime:" if present, otherwise at the end of validate block.
+    '''
+    ST = '[_update_jinja_indices]'
+    lines = jinja_file.read_text().splitlines(keepends=True)
+
+    # Locate top-level "validate:" line (indent 0)
+    validate_line = None
+    for i, line in enumerate(lines):
+        if re.match(r'^validate\s*:', line):
+            validate_line = i
+            break
+    if validate_line is None:
+        print(f'{ST} no validate: block found in {jinja_file}')
+        return
+
+    # Scan validate's direct children (indent=2) to find existing 'indices:' and 'runtime:'
+    indices_start  = None  # line index of '  indices:'
+    indices_end    = None  # line index where indices block ends (exclusive)
+    insert_before  = len(lines)  # default: end of file
+
+    i = validate_line + 1
+    while i < len(lines):
+        raw     = lines[i]
+        stripped = raw.lstrip()
+        indent  = len(raw) - len(stripped)
+        is_blank = not stripped.strip()
+
+        if is_blank:
+            i += 1
+            continue
+
+        # A top-level key (indent=0) means the validate block ended
+        if indent == 0:
+            if indices_start is not None and indices_end is None:
+                indices_end = i
+            insert_before = i
+            break
+
+        # Direct child of validate (indent=2)
+        if indent == 2:
+            key = stripped.split(':')[0].strip()
+            if key == 'indices':
+                indices_start = i
+                # Find the end of the indices block: next non-blank line at indent <= 2
+                j = i + 1
+                while j < len(lines):
+                    r2 = lines[j]
+                    s2 = r2.lstrip()
+                    ind2 = len(r2) - len(s2)
+                    if s2.strip() and ind2 <= 2:
+                        indices_end = j
+                        break
+                    j += 1
+                else:
+                    indices_end = len(lines)
+                i = indices_end  # skip past the block
+                continue
+            elif key == 'runtime' and indices_start is None:
+                # insert new block before runtime:
+                insert_before = i
+        i += 1
+
+    new_block = _build_indices_yaml(indices_stats, indent=2)
+
+    if indices_start is not None:
+        new_lines = lines[:indices_start] + [new_block] + lines[indices_end:]
+    else:
+        new_lines = lines[:insert_before] + [new_block] + lines[insert_before:]
+
+    jinja_file.write_text(''.join(new_lines))
+    print(f'{ST} updated {jinja_file}')
+
+
+def generate_index_stats(args: Namespace):
+    '''
+    Build the sortmerna index for a test's reference files (-index 1),
+    collect statistics from the generated index files, and write them
+    into the validate:indices section of the test's jinja template.
+
+    CLI: python scripts/run.py index-stats --test t3 --smr-exe dist/bin/sortmerna
+         --data-dir data/ --ref-dir data/rRNA_databases -w /tmp/smr_t3
+    '''
+    ST = '[generate_index_stats]'
+
+    cfg     = parse_test_config(args)
+    smr_exe = cfg['exe']
+    smr_args = cfg.get('args', {})
+
+    refs    = smr_args.get('-ref', [])
+    reads   = smr_args.get('-reads', [])
+    workdir = smr_args.get('-workdir') or args.workdir
+
+    if not refs:
+        print(f'{ST} no -ref entries found in test config')
+        return
+    if not workdir or str(workdir) == 'None':
+        print(f'{ST} workdir is required; pass --workdir')
+        return
+
+    # Build index-only command
+    cmd = [smr_exe]
+    for ref in refs:
+        cmd += ['-ref', ref]
+    for read in reads:
+        cmd += ['-reads', read]
+    cmd += ['-workdir', str(workdir), '-index', '1']
+
+    rcode, _, _ = run_test(cmd)
+    if rcode != 0:
+        print(f'{ST} sortmerna exited with code {rcode}; aborting')
+        return
+
+    idx_dir = Path(workdir) / 'idx'
+    if not idx_dir.exists():
+        print(f'{ST} idx directory not found: {idx_dir}')
+        return
+
+    indices_stats = {}
+    for ref in refs:
+        ref_base = Path(ref).stem  # e.g. silva-bac-16s-database-id85
+        rdata = _collect_ref_index_stats(idx_dir, ref)
+        if rdata:
+            indices_stats[ref_base] = rdata
+        else:
+            print(f'{ST} skipping {ref_base}: no index stats found')
+
+    if not indices_stats:
+        print(f'{ST} no index stats collected; jinja file not modified')
+        return
+
+    script_dir = Path(__file__).parent
+    jinja_file = Path(args.config) if getattr(args, 'config', None) else script_dir / f'{args.name}.jinja'
+    _update_jinja_indices(jinja_file, indices_stats)
+    print(f'{ST} done')
+
 
 if __name__ == "__main__":
     '''
@@ -1500,6 +1845,21 @@ if __name__ == "__main__":
     p5.add_argument('-e','--envn', dest='envname', help=('Name of environment: WIN | WSL '
                                                       '| LNX_AWS | LNX_TRAVIS | LNX_VBox_Ubuntu_1804 | ..'))
     p5.add_argument('--score-split', action="store_true", help='set corresponding sortmerna argument')
+
+    # build index and record statistics into test jinja
+    p6 = subpar.add_parser('index-stats', help='build index and record statistics into test jinja')
+    p6.add_argument('--test', dest='name', required=True, help='Test name e.g. t3')
+    p6.add_argument('--smr-exe', dest='smr_exe', help='path to sortmerna executable')
+    p6.add_argument('--data-dir', dest='data_dir', help='path to the data. Abs or relative')
+    p6.add_argument('--ref-dir', dest='ref_dir', help='path to the reference data. Abs or relative')
+    p6.add_argument('-w', '--workdir', dest='workdir', help='working directory for sortmerna run')
+    p6.add_argument('--threads', dest='threads', help='number of threads to use')
+    p6.add_argument('--config', dest='config', help='Tests configuration file (overrides --test lookup)')
+    p6.add_argument('--presets', dest='presets', help='Tests presets file')
+    p6.add_argument('-d', '--dbg-level', dest='dbg_level', help='debug level 0 | 1 | 2')
+    p6.add_argument('--task', dest='task', help='Processing task 0 | 1 | 2 | 3 | 4 | 5')
+    p6.add_argument('--index', dest='index', help='Index option 0 | 1 | 2')
+
     args = p0.parse_args()
 
     if 'split' == args.cmd:
@@ -1596,6 +1956,8 @@ if __name__ == "__main__":
                     process_output(**cfg)
             else:
                 break
+    elif 'index-stats' == args.cmd:
+        generate_index_stats(args)
     else:
         ...
 #END main
