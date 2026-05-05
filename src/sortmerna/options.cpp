@@ -991,11 +991,11 @@ void Runopts::opt_task(const std::string &val)
 
 	switch (task_num)
 	{
-	case 0: alirep = align; break;
-	case 1: alirep = summary; break;
-	case 2: alirep = report; break;
-	case 3: alirep = alnsum; break;
-	case 4: alirep = all; break;
+	case 0: task = align; break;
+	case 1: task = summary; break;
+	case 2: task = report; break;
+	case 3: task = align_summary; break;
+	case 4: task = all; break;
 	}
 } // ~Runopts::opt_task
 
@@ -1214,7 +1214,7 @@ void Runopts::opt_index(const std::string& val)
 			INFO("using '", OPT_INDEX, "' with specified value ", ii);
 			findex = ii;
 			if (findex == 1)
-				alirep = ALIGN_REPORT::index_only;
+				task = TASK::index_only;
 		}
 	}
 	else {
@@ -1301,7 +1301,7 @@ void Runopts::validate_kvdbdir()
 		if (std::filesystem::is_empty(kvdbdir))
 		{
 			// dir exists and empty -> use
-			if (ALIGN_REPORT::summary == alirep || ALIGN_REPORT::report == alirep)
+			if (TASK::summary == task || TASK::report == task)
 			{
 				INFO("KVDB directory: " , std::filesystem::absolute(kvdbdir) , " is empty. OK to use.");
 			}
@@ -1310,7 +1310,7 @@ void Runopts::validate_kvdbdir()
 		{
 			// TODO: Store some metadata in DB to verify the alignment.
 			// kvdb.verify()
-			if (ALIGN_REPORT::align == alirep || ALIGN_REPORT::all == alirep || ALIGN_REPORT::alnsum == alirep)
+			if (TASK::align == task || TASK::all == task || TASK::align_summary == task)
 			{
 				// if (kvdb.verify()) // TODO
 				// output the listing

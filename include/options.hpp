@@ -603,8 +603,8 @@ public:
 	const std::string OUT_DIR  = "out";
 	const std::string READB_DIR = "readb";
 
-	enum ALIGN_REPORT { align, summary, report, alnsum, all, index_only };
-	ALIGN_REPORT alirep = ALIGN_REPORT::all;
+	enum TASK { align, summary, report, align_summary, all, index_only };
+	TASK task = TASK::all;
 	BlastFormat blastFormat = BlastFormat::TABULAR;
 
 	// methods

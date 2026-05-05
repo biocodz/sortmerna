@@ -70,7 +70,7 @@ int main(int argc, char** argv)
 	else
 	{
 		Index index(opts); // reference index DB
-		if (Runopts::ALIGN_REPORT::index_only == opts.alirep) {
+		if (opts.findex == 1) {
 			INFO("Only performed indexing as '", OPT_INDEX, "' = 1 was specified");
 			return 0;
 		}
@@ -80,28 +80,28 @@ int main(int argc, char** argv)
 		Readfeed readfeed(opts.feed_type, opts.readfiles, opts.num_proc_thread, opts.readb_dir, opts.is_paired);
 		Readstats readstats(readfeed.num_reads_tot, readfeed.length_all, readfeed.min_read_len, readfeed.max_read_len, kvdb, opts);
 
-		switch (opts.alirep)
+		switch (opts.task)
 		{
-		case Runopts::ALIGN_REPORT::index_only:
+		case Runopts::TASK::index_only:
 			break;
-		case Runopts::ALIGN_REPORT::align:
+		case Runopts::TASK::align:
 			align(readfeed, readstats, index, kvdb, opts);
 			break;
-		case Runopts::ALIGN_REPORT::summary:
+		case Runopts::TASK::summary:
 			if (opts.is_otu_map || opts.is_denovo) denovo_stats(readfeed, readstats, kvdb, opts);
 			if (opts.is_otu_map) fill_otu_map(readfeed, readstats, kvdb, opts);
 			writeSummary(readstats, opts);
 			break;
-		case Runopts::ALIGN_REPORT::report:
+		case Runopts::TASK::report:
 			writeReports(readfeed, readstats, kvdb, opts);
 			break;
-		case Runopts::ALIGN_REPORT::alnsum:
+		case Runopts::TASK::align_summary:
 			align(readfeed, readstats, index, kvdb, opts);
 			if (opts.is_otu_map || opts.is_denovo) denovo_stats(readfeed, readstats, kvdb, opts);
 			if (opts.is_otu_map) fill_otu_map(readfeed, readstats, kvdb, opts);
 			writeSummary(readstats, opts);
 			break;
-		case Runopts::ALIGN_REPORT::all:
+		case Runopts::TASK::all:
 			align(readfeed, readstats, index, kvdb, opts);
 			// TODO: combine processing otu map and reports to avoid double run through reads and refs (in this case only) 20201126
 			if (opts.is_otu_map || opts.is_denovo) denovo_stats(readfeed, readstats, kvdb, opts);
