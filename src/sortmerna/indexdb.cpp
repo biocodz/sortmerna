@@ -980,6 +980,22 @@ namespace {
 }
 
 
+// Per-partition statistics collected while writing index binary files.
+// Written to *.idx_stats.yaml alongside the binary index files.
+struct idx_yaml_part {
+	uint32_t numseq_part;
+	uint64_t seq_part_size;
+	uint32_t kmer_num_nonzero;
+	uint64_t kmer_total_count;
+	uint32_t kmer_max_count;
+	uint32_t pos_num_elements;
+	uint64_t pos_total_positions;
+	uint32_t pos_max_positions;
+	uint64_t kmer_file_bytes;
+	uint64_t bursttrie_file_bytes;
+	uint64_t pos_file_bytes;
+};
+
 int build_index(Runopts& opts)
 {
 	std::stringstream ss;
@@ -1019,9 +1035,10 @@ int build_index(Runopts& opts)
 	{
 		std::vector< std::pair<std::string, uint32_t> > sam_sq_header;
 
-		// vector of structs storing information on which sequences from 
+		// vector of structs storing information on which sequences from
 		// the original FASTA file were added to each index part
 		std::vector<index_parts_stats> index_parts_stats_vec;
+		std::vector<idx_yaml_part> yaml_parts;
 
 		// Open reference file for reading
 		FILE *fp = fopen(idxpair.first.data(), "r");
@@ -1811,12 +1828,18 @@ int build_index(Runopts& opts)
 			index_parts_stats_vec.push_back(thispart);
 
 			// the 9-mer look up tables
+			uint32_t kmer_nonzero = 0, kmer_max = 0;
+			uint64_t kmer_total = 0;
 			for (uint32_t j = 0; j < (uint32_t)(1 << opts.seed_win_len); j++)
 			{
-				oskmer.write(reinterpret_cast<const char*>(&(lookup_table[j].count)),
-					sizeof(uint32_t));
+				uint32_t cnt = lookup_table[j].count;
+				oskmer.write(reinterpret_cast<const char*>(&cnt), sizeof(uint32_t));
+				if (cnt > 0) ++kmer_nonzero;
+				kmer_total += cnt;
+				if (cnt > kmer_max) kmer_max = cnt;
 			}
 			oskmer.close();
+			uint64_t kmer_file_bytes = std::filesystem::file_size(idx_file);
 
 			// 2. mini-burst tries
 			// load 9-mer look-up table and mini-burst tries to /index/bursttrief.dat
@@ -1826,6 +1849,7 @@ int build_index(Runopts& opts)
 			}
 
 			load_index(lookup_table, (char*)idx_file.data(), opts);
+			uint64_t bursttrie_file_bytes = std::filesystem::file_size(idx_file);
 
 			// 3. 19-mer position look up tables
 			idx_file = idxpair.second + ".pos_" + part_str + ".dat";
@@ -1838,13 +1862,26 @@ int build_index(Runopts& opts)
 			// number of unique 19-mers
 			ospos.write(reinterpret_cast<const char*>(&number_elements), sizeof(uint32_t));
 			// the positions
+			uint64_t pos_total = 0;
+			uint32_t pos_max = 0;
 			for (uint32_t j = 0; j < number_elements; j++)
 			{
 				uint32_t size = positions_tbl[j].size;
 				ospos.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
 				ospos.write(reinterpret_cast<const char*>(positions_tbl[j].arr), sizeof(seq_pos)*size);
+				pos_total += size;
+				if (size > pos_max) pos_max = size;
 			}
 			ospos.close();
+			uint64_t pos_file_bytes = std::filesystem::file_size(idx_file);
+
+			// stash per-part stats for YAML output
+			yaml_parts.push_back({
+				numseq_part, seq_part_size,
+				kmer_nonzero, kmer_total, kmer_max,
+				number_elements, pos_total, pos_max,
+				kmer_file_bytes, bursttrie_file_bytes, pos_file_bytes
+			});
 
 			// Free malloc'd memory
 			// Table of unique 19-mer positions
@@ -1933,6 +1970,56 @@ int build_index(Runopts& opts)
 				stats.write(reinterpret_cast<const char*>(&(samheader.second)), sizeof(uint32_t));
 			}
 			stats.close();
+
+			// Write human-readable YAML index statistics alongside the binary files.
+			// background_freq is already normalized at this point (division done above).
+			std::string yaml_path = idxpair.second + ".idx_stats.yaml";
+			std::ofstream yaml_out(yaml_path);
+			if (yaml_out.good())
+			{
+				uint64_t stats_bytes = std::filesystem::file_size(idxpair.second + ".stats");
+				uint64_t numseq_yaml = strs / 2;
+				yaml_out << std::fixed << std::setprecision(4);
+				yaml_out << "reference: " << idxpair.first << "\n";
+				yaml_out << "stats:\n";
+				yaml_out << "  numseq: "     << numseq_yaml           << "\n";
+				yaml_out << "  full_len: "   << full_len              << "\n";
+				yaml_out << "  part_num: "   << part_num              << "\n";
+				yaml_out << "  seed_win_len: " << opts.seed_win_len   << "\n";
+				yaml_out << "  background_freq: {A: " << background_freq[0]
+				         << ", C: " << background_freq[1]
+				         << ", G: " << background_freq[2]
+				         << ", T: " << background_freq[3] << "}\n";
+				yaml_out << "  files:\n";
+				yaml_out << "    stats: " << stats_bytes << "\n";
+				yaml_out << "parts:\n";
+				for (uint16_t pi = 0; pi < part_num; ++pi)
+				{
+					const auto& yp = yaml_parts[pi];
+					yaml_out << "  - part: "          << pi                    << "\n";
+					yaml_out << "    numseq_part: "    << yp.numseq_part       << "\n";
+					yaml_out << "    seq_part_size: "  << yp.seq_part_size     << "\n";
+					yaml_out << "    files:\n";
+					yaml_out << "      bursttrie_"     << pi << ".dat: " << yp.bursttrie_file_bytes << "\n";
+					yaml_out << "      pos_"           << pi << ".dat: " << yp.pos_file_bytes       << "\n";
+					yaml_out << "      kmer_"          << pi << ".dat: " << yp.kmer_file_bytes      << "\n";
+					yaml_out << "    kmer:\n";
+					yaml_out << "      num_nonzero: "  << yp.kmer_num_nonzero  << "\n";
+					yaml_out << "      total_count: "  << yp.kmer_total_count  << "\n";
+					yaml_out << "      max_count: "    << yp.kmer_max_count    << "\n";
+					yaml_out << "    pos:\n";
+					yaml_out << "      num_elements: "   << yp.pos_num_elements   << "\n";
+					yaml_out << "      total_positions: " << yp.pos_total_positions << "\n";
+					yaml_out << "      max_positions: "  << yp.pos_max_positions  << "\n";
+				}
+				yaml_out.close();
+				if (opts.is_verbose)
+					INFO_NS("      wrote index stats to ", yaml_path, "\n");
+			}
+			else
+			{
+				WARN("Could not create index stats file: ", yaml_path);
+			}
 
 			INFO_NS("  done.\n\n");
 		}
