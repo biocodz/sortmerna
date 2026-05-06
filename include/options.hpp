@@ -355,7 +355,8 @@ help_task =
 	"                        1 - post-processing (log writing)\n"
 	"                        2 - generate reports\n"
 	"                        3 - align and post-process\n"
-	"                        4 - all\n\n",
+	"                        4 - all\n"
+	"                        5 - index only\n\n",
 help_a = 
 	"DEPRECATED in favour of '-threads'. Number of           numCores\n"
 	"                                            processing threads to use.\n"
