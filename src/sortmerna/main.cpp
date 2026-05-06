@@ -70,8 +70,8 @@ int main(int argc, char** argv)
 	else
 	{
 		Index index(opts); // reference index DB
-		if (opts.findex == 1) {
-			INFO("Only performed indexing as '", OPT_INDEX, "' = 1 was specified");
+		if (opts.task == Runopts::TASK::index_only) {
+			INFO("Only performed indexing as '", OPT_TASK, "' = 5 was specified");
 			return 0;
 		}
 

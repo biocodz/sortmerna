@@ -1757,7 +1757,7 @@ def _update_jinja_indices(jinja_file: Path, indices_stats: dict):
 
 def generate_index_stats(args: Namespace):
     '''
-    Build the sortmerna index for a test's reference files (-index 1),
+    Build the sortmerna index for a test's reference files (-task 5),
     collect statistics from the generated index files, and write them
     into the validate:indices section of the test's jinja template.
 
@@ -1787,7 +1787,7 @@ def generate_index_stats(args: Namespace):
         cmd += ['-ref', ref]
     for read in reads:
         cmd += ['-reads', read]
-    cmd += ['-workdir', str(workdir), '-index', '1']
+    cmd += ['-workdir', str(workdir), '-task', '5']
 
     rcode, _, _ = run_test(cmd)
     if rcode != 0:
@@ -1902,7 +1902,7 @@ if __name__ == "__main__":
     p6.add_argument('--presets', dest='presets', help='Tests presets file')
     p6.add_argument('-d', '--dbg-level', dest='dbg_level', help='debug level 0 | 1 | 2')
     p6.add_argument('--task', dest='task', help='Processing task 0 | 1 | 2 | 3 | 4 | 5')
-    p6.add_argument('--index', dest='index', help='Index option 0 | 1 | 2')
+    p6.add_argument('--index', dest='index', help='Index option 0 | 1')
 
     args = p0.parse_args()
 
@@ -1946,26 +1946,8 @@ if __name__ == "__main__":
             # May Fail if any file in the directory is open. Close the files and re-run.
             if args.workdir and Path(args.workdir).exists() \
                 and not (args.validate_only or args.task in ['1','2']):
-                print(f'{ST} clearing workdir after {test}: {args.workdir}')
+                print(f'{ST} clearing workdir prior to {test}: {args.workdir}')
                 shutil.rmtree(args.workdir)
-
-            # clean previous alignments (KVDB)
-            #kvdb = cfg['args'].get('-kvdb') or Path(cfg['args'].get('-workdir')) / 'kvdb'
-            #if Path(kvdb).exists() and not (args.validate_only or args.task in ['1','2']):
-            #    print(f'{ST} Removing KVDB dir: {kvdb}')
-            #    shutil.rmtree(kvdb)
-
-            # clean output
-            #ali_dir = os.path.dirname(ALIF) if ALIF else None  # aligned output directory
-            #if ali_dir and os.path.exists(ali_dir) and not (args.validate_only or args.task in ['1','2']):
-            #    print(f'{ST} Removing Aligned Output: {ali_dir}')
-            #    shutil.rmtree(ali_dir)
-
-            #if OTHF:
-            #    oth_dir = os.path.dirname(OTHF)
-            #    if oth_dir and os.path.exists(oth_dir) and oth_dir != ali_dir and not (args.validate_only or args.task in ['1','2']):
-            #        print(f'{ST} removing Non-Aligned Output: {oth_dir}')
-            #        shutil.rmtree(oth_dir)
 
             # run the test
             if not args.validate_only:
@@ -1983,7 +1965,10 @@ if __name__ == "__main__":
                 rcode, outl, errl = run_test(cmd, capture=is_capture)
 
             # validate alignment results
-            if rcode == 0 or not cfg.get('failonerror', True):
+            if args.task == '5':
+                msg = f'{ST} task 5 (only indexing) was requested for test {test}. Skipping validation.'
+                print(msg)
+            elif rcode == 0 or not cfg.get('failonerror', True):
                 if args.func:
                     gdict = globals().copy()
                     gdict.update(locals())

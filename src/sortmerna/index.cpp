@@ -115,7 +115,7 @@ Index::Index(Runopts& opts) : index_num(0), part(0), number_elements(0), is_read
 	}
 
 	if (!is_ready) {
-		if (opts.findex == 1 || opts.findex == 2) {
+		if (opts.findex == 1) {
 			// test index files writable
 			for (std::size_t idx = 0; idx < opts.indexfiles.size(); ++idx) {
 				for (auto const& sfx : sfxarr) {

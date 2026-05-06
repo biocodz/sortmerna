@@ -983,9 +983,9 @@ void Runopts::opt_task(const std::string &val)
 {
 	int task_num = std::stoi(val);
 
-	if (task_num > 4)
+	if (task_num > 5)
 	{
-		ERR("Option '", OPT_TASK, "' can only take values in range [0..4] Provided value is [", task_num , "'");
+		ERR("Option '", OPT_TASK, "' can only take values in range [0..5] Provided value is [", task_num , "'");
 		exit(EXIT_FAILURE);
 	}
 
@@ -996,6 +996,7 @@ void Runopts::opt_task(const std::string &val)
 	case 2: task = report; break;
 	case 3: task = align_summary; break;
 	case 4: task = all; break;
+	case 5: task = index_only; break;
 	}
 } // ~Runopts::opt_task
 
@@ -1207,14 +1208,12 @@ void Runopts::opt_index(const std::string& val)
 {
 	if (val.size() > 0) {
 		auto ii = std::stoi(val);
-		if (!(ii == 0 || ii == 1 || ii == 2)) {
-			WARN("'", OPT_INDEX, "' can only take integer values: [", 0, ", ", 1, ", ", 2, "]. Provided value: ", val, " Using default: ", findex);
+		if (!(ii == 0 || ii == 1)) {
+			WARN("'", OPT_INDEX, "' can only take integer values: [", 0, ", ", 1, "]. Provided value: ", val, " Using default: ", findex);
 		}
 		else {
 			INFO("using '", OPT_INDEX, "' with specified value ", ii);
 			findex = ii;
-			if (findex == 1)
-				task = TASK::index_only;
 		}
 	}
 	else {

@@ -399,14 +399,13 @@ help_zip_out =
 	"       '-" + OPT_READS + " freads.flat -" + OPT_ZIP_OUT + "' : compress the output when the input files are flat\n\n",
 
 help_index =
-    "Build reference database index                          2\n\n"
+    "Build reference database index                          1\n\n"
 	"       By default when this option is not used, the program checks the reference index and\n"
 	"       builds it if not already existing.\n"
 	"       This can be changed by using '-" + OPT_INDEX + "' as follows:\n"
 	"       '-" + OPT_INDEX + " 0' - skip indexing. If the index does not exist, the program will terminate\n"
 	"                                and warn to build the index prior performing the alignment\n"
-	"       '-" + OPT_INDEX + " 1' - only perform the indexing and terminate\n"
-	"       '-" + OPT_INDEX + " 2' - the default behaviour, the same as when not using this option at all\n\n",
+	"       '-" + OPT_INDEX + " 1' - the default behaviour, the same as when not using this option at all\n\n",
 
 help_dbg_level =
 	"Debug level                                             0\n\n"
@@ -518,7 +517,7 @@ public:
 	bool is_pid = false; // add pid to output file names
 	bool is_cmd = false; // start interactive session
 	bool is_dbg_put_kvdb = false; // if True - do Not put records into Key-value DB. Debugging Memory Consumption.
-	int  findex = 2; // 0 (don't build index) | 1 (only build index) | 2 (default - build index if not present)
+	int  findex = 1; // 0 (don't build index) | 1 (default - build index if not present)
 	bool is_align = false;
 	bool is_filter = false;
     bool is_score_split = false;  // if true - calculate the SW score per split rather then for all reads
