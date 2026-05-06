@@ -1540,17 +1540,65 @@ def _parse_pos_binary(fpath: Path) -> dict:
     }
 
 
+def _read_idx_stats_yaml(yaml_file: Path) -> dict:
+    '''
+    Parse a sortmerna-generated *.idx_stats.yaml file into the same dict
+    structure used by _collect_ref_index_stats.  The YAML has top-level keys
+    reference / stats / parts; we reformat into the validate:indices schema.
+    '''
+    with open(yaml_file) as f:
+        raw = yaml.safe_load(f)
+
+    part0 = raw['parts'][0] if raw.get('parts') else {}
+    result = {
+        'stats': {
+            'numseq':       raw['stats']['numseq'],
+            'full_len':     raw['stats']['full_len'],
+            'part_num':     raw['stats']['part_num'],
+            'seed_win_len': raw['stats']['seed_win_len'],
+            'background_freq': raw['stats']['background_freq'],
+            'parts': [
+                {'numseq_part': p['numseq_part'], 'seq_part_size': p['seq_part_size']}
+                for p in raw.get('parts', [])
+            ],
+        },
+        'files': {
+            'stats': raw['stats']['files']['stats'],
+            **{k: v for p in raw.get('parts', []) for k, v in p.get('files', {}).items()},
+        },
+        'kmer': part0.get('kmer', {}),
+        'pos':  part0.get('pos', {}),
+    }
+    return result
+
+
 def _collect_ref_index_stats(idx_dir: Path, ref_path: str) -> dict:
     '''
-    Locate the index files for ref_path inside idx_dir by scanning *.stats files
-    and matching the embedded fasta_filename field. Returns stats dict.
-    The index prefix is a std::hash of the ref basename, so it cannot be derived
-    directly; instead we read each stats file until we find the matching one.
+    Locate the index files for ref_path inside idx_dir. The index prefix is a
+    std::hash of the ref basename, not derivable in Python, so we scan matching
+    files to find the right one.
+
+    Preference order:
+      1. *.idx_stats.yaml written by sortmerna at build time (fast, no binary parsing)
+      2. Binary *.stats + *.kmer_0.dat + *.pos_0.dat parsed directly (fallback)
     '''
     ST = '[_collect_ref_index_stats]'
     ref_resolved = str(Path(ref_path).resolve())
+
+    # --- try YAML first (written by sortmerna >= the version that added this) ---
+    for yf in sorted(idx_dir.glob('*.idx_stats.yaml')):
+        try:
+            raw = yaml.safe_load(yf.read_text())
+            stored = raw.get('reference', '')
+            if str(Path(stored).resolve()) == ref_resolved or stored == ref_path:
+                return _read_idx_stats_yaml(yf)
+        except Exception as ex:
+            print(f'{ST} warning: could not parse {yf}: {ex}')
+
+    # --- fallback: parse binary index files ---
     matched_prefix = None
     matched_stats  = None
+    sf = None
 
     for sf in sorted(idx_dir.glob('*.stats')):
         try:
@@ -1558,9 +1606,8 @@ def _collect_ref_index_stats(idx_dir: Path, ref_path: str) -> dict:
         except Exception as ex:
             print(f'{ST} warning: could not parse {sf}: {ex}')
             continue
-        stored_resolved = str(Path(fasta_fn).resolve())
-        if stored_resolved == ref_resolved or fasta_fn == ref_path:
-            matched_prefix = sf.with_suffix('')  # strip .stats -> bare hash path
+        if str(Path(fasta_fn).resolve()) == ref_resolved or fasta_fn == ref_path:
+            matched_prefix = sf.with_suffix('')
             matched_stats  = sd
             break
 
@@ -1570,10 +1617,7 @@ def _collect_ref_index_stats(idx_dir: Path, ref_path: str) -> dict:
 
     result = {'stats': matched_stats}
 
-    # File sizes: stats file + per-partition data files
-    files_stats = {
-        'stats': sf.stat().st_size,
-    }
+    files_stats = {'stats': sf.stat().st_size}
     for part_idx in range(matched_stats['part_num']):
         for pfx in ('bursttrie', 'pos', 'kmer'):
             fname = f'{pfx}_{part_idx}.dat'
