@@ -44,11 +44,7 @@ KeyValueDatabase::KeyValueDatabase(std::string const &kvdbPath)
 {
 	// init and open key-value database for read matches
 	options.IncreaseParallelism();
-#if defined(_WIN32)
-	options.compression = rocksdb::kXpressCompression;
-#else
 	options.compression = rocksdb::kZlibCompression;
-#endif
 	options.create_if_missing = true;
 	rocksdb::Status s = rocksdb::DB::Open(options, kvdbPath, &kvdb);
 	assert(s.ok());
