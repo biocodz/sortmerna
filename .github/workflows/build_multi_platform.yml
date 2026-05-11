@@ -24,10 +24,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-        #exclude:
-        #  - os: ubuntu-latest
-        #  - os: macos-latest
+        os: [ubuntu-latest, macos-latest]
     steps:
     - name: git checkout
       uses: actions/checkout@v4
@@ -65,21 +62,6 @@ jobs:
         echo "=== listing dist/ ==="
         ls -l ./dist
 
-    - name: build windows
-      if: runner.os == 'Windows'
-      env:
-        CC: cl
-      run: |
-        & "$env:CONDA/shell/condabin/conda-hook.ps1"
-        & "$env:programfiles/Microsoft Visual Studio/2022/Enterprise/Common7/Tools/Launch-VsDevShell.ps1" -arch amd64
-        conda activate $env:CONDA
-        conda install -c conda-forge -y pyyaml jinja2 requests ninja cmake
-        echo "cmake version: $(cmake --version)"
-        pushd $env:GITHUB_WORKSPACE
-        echo 'running python setup.py ... in $(pwd)'
-        python setup.py all
-        echo "=== listing dist/ ==="
-        ls -l ./dist
     #- name: upload macOS artifacts
     #  uses: actions/upload-artifact@v4
     #  if: runner.os == 'macOS'
@@ -98,13 +80,6 @@ jobs:
     #      dist/sortmerna*Linux.deb
     #      dist/sortmerna*Linux.sh
     #      dist/sortmerna*Linux.tar.gz
-    #- name: upload windows artifacts
-    #  uses: actions/upload-artifact@v4
-    #  if: runner.os == 'Windows'
-    #  with:
-    #    retention-days: 3
-    #    path: |
-    #      dist/sortmerna*win64.7z
 
   build-linux-aarch64:
     name: Build on Linux ARM64

@@ -45,23 +45,6 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
-        },
-        {
-            "name": "WIN_release",
-            "inherits": "common",
-            "cacheVariables": {
-                "DIRENTWIN_HOME": "${sourceDir}/3rdparty/dirent",
-                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
-                "CPACK_BINARY_NSIS": false,
-                "CPACK_BINARY_7Z": true,
-                "CPACK_BINARY_ZIP": false,
-                "CPACK_SOURCE_7Z": true,
-                "CPACK_SOURCE_ZIP": false
-            }
-        },
-        {
-            "name": "WIN_debug",
-            "inherits": "WIN_release"
         }
     ],
     "buildPresets": [
@@ -74,16 +57,6 @@
             "name": "LIN_debug",
             "configuration": "Debug",
             "configurePreset": "LIN_debug"
-        },
-        {
-            "name": "WIN_release",
-            "configuration": "Release",
-            "configurePreset": "WIN_release"
-        },
-        {
-            "name": "WIN_debug",
-            "configuration": "Debug",
-            "configurePreset": "WIN_debug"
         }
     ]
 }

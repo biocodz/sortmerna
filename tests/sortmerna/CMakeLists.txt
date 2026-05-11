@@ -19,24 +19,10 @@ set(TEST_SRCS
 )
 
 add_executable(tests ${TEST_SRCS})
-#target_include_directories(tests
-#PRIVATE
-#		${CMAKE_SOURCE_DIR}/include
-#		#${CMAKE_SOURCE_DIR}/src/winapi/include
-#)
-if(WIN32)
-	target_link_libraries(tests
-		build_version
-		alp
-		smr_objs
-		winapi
-	)
-else()
-	target_link_libraries(tests
-		build_version
-		alp
-		smr_objs
-	)
-endif()
+target_link_libraries(tests
+	build_version
+	alp
+	smr_objs
+)
 
 #add_executable("test_${test}" ${test}.cpp $<TARGET_OBJECTS:smr_objs>)

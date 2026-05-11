@@ -31,7 +31,7 @@ the [nf-core RNA-Seq pipeline v.3.9](https://nf-co.re/rnaseq/3.9).
 
 ## Getting Started
 
-SortMeRNA 5 is C++17 compliant. It uses CMake as the build system, and can be run/built on all major OS including Linux, Windows, and Mac, on AMD64 and ARM64 architectures.
+SortMeRNA 6 is C++17 compliant. It uses CMake as the build system, and can be run/built on Linux, Mac, and on AMD64 and ARM64 architectures. Support for native Windows was dropped in version 6.0. WSL can be used to run Sortmerna on Windows.
 
 ### Using Conda package
 
@@ -62,10 +62,10 @@ which sortmerna
 
 # check version
 sortmerna --version
-  SortMeRNA version 5.0.0
-  Build Date: Apr 30 2026
-  sortmerna_build_git_sha:@c31b3a81bdb8c338b1a7c34a2fb8b366e1ce8de2@
-  sortmerna_build_git_date:@2026/04/30 17:54:45@
+  SortMeRNA version 6.0.0
+  Build Date: May 11 2026
+  sortmerna_build_git_sha:@dfe166f75553712afb48bb434ca6cff40f481e14@
+  sortmerna_build_git_date:@2026/05/11 11:00:07@
 
 # view help
 sortmerna -h
@@ -83,10 +83,10 @@ Issue the following bash commands:
 pushd ~
 
 # get the distro
-wget https://github.com/biocore/sortmerna/releases/download/v5.0.0/sortmerna-5.0.0-Linux.sh
+wget https://github.com/biocore/sortmerna/releases/download/v6.0.0/sortmerna-6.0.0-Linux.sh
 
 # view the installer usage
-bash sortmerna-5.0.0-Linux.sh --help
+bash sortmerna-6.0.0-Linux.sh --help
     Options: [defaults in brackets after descriptions]
       --help            print this message
       --version         print cmake installer version
@@ -96,8 +96,8 @@ bash sortmerna-5.0.0-Linux.sh --help
       --skip-license    accept license
 
 # run the installer
-bash sortmerna-5.0.0-Linux.sh --skip-license
-  sortmerna Installer Version: 5.0.0, Copyright (c) Clarity Genomics
+bash sortmerna-6.0.0-Linux.sh --skip-license
+  sortmerna Installer Version: 6.0.0, Copyright (c) Clarity Genomics
   This is a self-extracting archive.
   The archive will be extracted to: $HOME/sortmerna
   
@@ -115,7 +115,7 @@ export PATH=$HOME/sortmerna/bin:$PATH
 
 # test the installation
 sortmerna --version
-  SortMeRNA version 5.0.0
+  SortMeRNA version 6.0.0
   Build Date: Jul 17 2021
   sortmerna_build_git_sha:@921fa40256760ea2d44c49b21eb326afda748d5e@
   sortmerna_build_git_date:@2022/08/16 10:59:31@

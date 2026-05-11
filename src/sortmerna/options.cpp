@@ -1426,10 +1426,6 @@ void Runopts::process(int argc, char**argv, bool dryrun)
 	}
 #endif
 
-#if defined(_WIN32)
-	_setmode(_fileno(stderr), _O_BINARY);
-#endif
-
 	if (argc == 1)
 	{
 		ERR("Missing required command options");

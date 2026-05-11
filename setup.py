@@ -54,13 +54,12 @@ from io import BytesIO
 #pkn = __name__.split('.')[-1]
 # define platform
 pf = platform.platform()
-IS_WIN = 'Windows' in pf
 IS_WSL = 'Linux' in pf and 'Microsoft' in pf # Windows Subsystem for Linux (WSL)
 IS_LNX = 'Linux' in pf and not 'Microsoft' in pf
 IS_OSX = 'macOS' in pf
-MY_OS = 'WIN' if IS_WIN else 'LIN' if IS_LNX else 'WSL' if IS_WSL else 'OSX' if IS_OSX else None
+MY_OS = 'LIN' if IS_LNX else 'WSL' if IS_WSL else 'OSX' if IS_OSX else None
 if not MY_OS:
-    print(f'[setup.py] Unexpected platform: {pf}')
+    print(f'[setup.py] Unsupported platform: {pf}')
     sys.exit(1)
 else:
     print(f'[setup.py] running on: {pf}, id: {MY_OS}')
@@ -72,7 +71,6 @@ SMR     = 'sortmerna'
 ZLIB    = 'zlib'
 ROCKS   = 'rocksdb'
 #RAPID   = 'rapidjson'
-DIRENT  = 'dirent'
 CMAKE   = 'cmake'
 CONDA   = 'conda'
 ALL     = 'all'
@@ -81,8 +79,8 @@ IBZIP2    = 'indexed_bzip2'
 BBHASH    = 'bbhash'
 PARASAIL  = 'parasail'
 
-ENV = None # WIN | WSL | LNX_AWS | LNX_TRAVIS
-UHOME = os.environ['USERPROFILE'] if IS_WIN else os.environ['HOME']
+ENV = None # WSL | LNX_AWS | LNX_TRAVIS
+UHOME = os.environ['HOME']
 
 def test():
     '''
@@ -247,7 +245,6 @@ def cmake_install(dir=None, force=False, **cfg):
     #                                          |_ default         
     # check already installed
     cmake_bin = f'{cmake_home}/bin/cmake'
-    if IS_WIN: cmake_bin = f'{cmake_bin}.exe'
     if os.path.exists(cmake_bin):
         print(f'{ST} Cmake is already installed: {cmake_bin}')
         if not force:
@@ -489,53 +486,10 @@ def zlib_build(**kw) -> tuple[int, list[str], list[str]]:
 #END rapidjson_build
 """
 
-def rocksdb_modify_3party_zlib(link_type:str='t1', **kw):
-    '''
-    modify 'thirdparty.inc' config file provided with RocksDb distro to point to zlib installation
-    only used on Windows
-
-    args:
-      - ptype  library linkage type as in 'env.jinja.yaml:rocksdb:link:win:t3'
-      - cfg    build configuration from 'env.jinja.yaml'
-
-    '''
-    ST = '[rocksdb_modify_3party_zlib]'
-    if not IS_WIN:
-        print(f'{ST} not used on Non-Windows')
-        return
-
-    print(f'{ST} fixing \'thirdparty.inc\' for linkage type \'{link_type}\' on Windows')
-    link_type = kw.get(ROCKS,{}).get('link.type', {}).get('windows',{}).get(link_type,{})
-    zlib_rel = link_type.get('zlib.release')  # cfg[ROCKS]['link']['WIN'][ptype]['ZLIB_LIB_RELEASE']
-    zlib_dbg = link_type.get('zlib.debug')  # cfg[ROCKS]['link']['WIN'][ptype]['ZLIB_LIB_DEBUG']
-    file3p = Path(kw.get(ROCKS).get('src')) / 'thirdparty.inc'
-    zlib_dist = Path(kw.get('zlib',{}).get('dist')).absolute()  # absolute to avoid package finding problems
-
-    for line in fileinput.FileInput(file3p, inplace=True):
-        if line.startswith('set(ZLIB_HOME'):
-            line = re.sub(r'ZLIB_HOME .*\)', f'ZLIB_HOME {zlib_dist.as_posix()})', line, flags=re.M)
-        if line.startswith('set(ZLIB_INCLUDE'):
-            line = re.sub(r'ZLIB_INCLUDE .*\)', r'ZLIB_INCLUDE ${ZLIB_HOME}/include)', line, flags=re.M)
-        if line.startswith('set(ZLIB_LIB_DEBUG'):
-            line = re.sub(r'ZLIB_LIB_DEBUG .*\)', f'ZLIB_LIB_DEBUG ${{ZLIB_HOME}}/lib/{zlib_dbg})', line, flags=re.M)
-        if line.startswith('set(ZLIB_LIB_RELEASE'):
-            line = re.sub(r'ZLIB_LIB_RELEASE .*\)', f'ZLIB_LIB_RELEASE ${{ZLIB_HOME}}/lib/{zlib_rel})', line, flags=re.M)
-        sys.stdout.write(line)
-   
-    #mo = re.search(r'ZLIB_HOME .*\)+?', txt)
-    #txtn = re.sub(r'ZLIB_HOME .*\)+?', r'ZLIB_HOME {})'.format(ZLIB_DIST.replace('\\', '/')), txt, flags = re.M)
-    #txtn = re.sub(r'ZLIB_INCLUDE .*\)+?', r'ZLIB_INCLUDE ${ZLIB_HOME}/include)', txtn, flags = re.M)
-    #txtn = re.sub(r'ZLIB_LIB_DEBUG .*\)', r'ZLIB_LIB_DEBUG ${{ZLIB_HOME}}/lib/{})'.format(lib_dbg), txtn, flags = re.M)
-    #txtn = re.sub(r'ZLIB_LIB_RELEASE .*\)', r'ZLIB_LIB_RELEASE ${{ZLIB_HOME}}/lib/{})'.format(lib_rel), txtn, flags = re.M)
-#END rocksdb_fix_3party
-    
 def rocksdb_build(link_type:str='t1', **kw) -> tuple[int, list[str], list[str]]: # ver=None, btype='Release', ptype='t3', **cfg
     '''
     args:
       - btype  build type Release | Debug
-      - ptype  Linkage type on Windows t1 | t2 | t3
-
-    NOTE: on Windows 'thridparty.inc' file has to be modified.
     '''
     ST = '[rocksdb_build]'
     print(f'{ST} started')
@@ -570,9 +524,6 @@ def rocksdb_build(link_type:str='t1', **kw) -> tuple[int, list[str], list[str]]:
         chash = sout
         print(f'{ST} building commit: {chash}')
 
-    if IS_WIN:
-        rocksdb_modify_3party_zlib(link_type, **kw)
-        
     # check cmake version
     cmd = ['cmake', '--version']
     rcode, sout, eout = proc_run(cmd, capture=True)
@@ -592,14 +543,7 @@ def rocksdb_build(link_type:str='t1', **kw) -> tuple[int, list[str], list[str]]:
         f'-DCMAKE_INSTALL_PREFIX:PATH={Path(dist_dir).absolute().as_posix()}',
         f'-DCMAKE_POLICY_DEFAULT_CMP0074=NEW'
     ]
-    # 20260210 Tue  warning: Policy CMP194 is not set: MSVC is not an assembler for language ASM.
-    if IS_WIN:
-        cmd.append(f'-DCMAKE_POLICY_DEFAULT_CMP194=OLD')
-    else:
-        # on Win 'find_package' is not used to search for zlib, so ZLIB_ROOT is not used. 
-        # Instead 'include_directories' and THIRDPARTY_LIBS variables are used to direct
-        # the build to ZLIB's includes and libs. See 'thirdparty.inc'
-        cmd.append(f'-DZLIB_ROOT:PATH={Path(zlib_dist).as_posix()}')
+    cmd.append(f'-DZLIB_ROOT:PATH={Path(zlib_dist).as_posix()}')
     if is_conda_cpp and sysroot:
         toolchain = Path(kw.get('toolchain')) if kw.get('toolchain') else Path.cwd() / 'cmake/conda_tc.cmake'
         if toolchain.exists():
@@ -667,8 +611,8 @@ def smr_build(ver:str=None,
         ol = sout.replace('"','').split('\n')
         presets = [l.strip() for l in ol if l.strip()][1:]
 
-    # cmake preset e.g. LIN_release | WIN_release
-    preset = f'LIN_{btype}' if IS_LNX or IS_WSL or IS_OSX else f'WIN_{btype}'
+    # cmake preset e.g. LIN_release
+    preset = f'LIN_{btype}'
     if preset not in presets:
         msg = f'{ST} preset {preset} not found in available presets: {presets}'
         print(msg)
@@ -714,8 +658,7 @@ def smr_build(ver:str=None,
         return rcode,sout, eout
 
     # test  CMAKE_INSTALL_PREFIX/bin/sortmerna --version
-    exe = 'sortmerna.exe' if IS_WIN else 'sortmerna'
-    exef = Path(install_dir) / 'bin' / exe
+    exef = Path(install_dir) / 'bin' / 'sortmerna'
     if not exef.exists():
         msg = f'{ST} file {exef} not found'
         print(msg)
@@ -930,8 +873,6 @@ if __name__ == "__main__":
     p_parasail = subpar.add_parser('parasail', help='build parasail SIMD alignment library')
     p_parasail.add_argument('--parasail-dist', dest='parasail_dist', help='parasail installation directory')
 
-    subpar.add_parser('dirent', help='clone dirent')
-
     p_cmake = subpar.add_parser('cmake', help='install cmake')
     p_cmake.add_argument('--clone', action='store_true', help='Perform git clone')
 
@@ -1013,7 +954,7 @@ if __name__ == "__main__":
         if getattr(args, 'clean', False):
             rcode, sout, eout = clean('build')
         if not getattr(args, 'cmake_preset', None):
-            args.cmake_preset = 'WIN_release' if IS_WIN else 'LIN_release'
+            args.cmake_preset = 'LIN_release'
         rcode, outl, errl = zlib_build(**config)
         if rcode == 0:
             rcode, sout, eout = rocksdb_build(**config)
@@ -1045,11 +986,6 @@ if __name__ == "__main__":
         bbhash_build(**config)
     elif args.name == PARASAIL:
         parasail_build(**config)
-    elif args.name == DIRENT:
-        url = config[DIRENT].get('url')
-        path = config[DIRENT].get('src')
-        shallow = config[DIRENT].get('shallow')
-        git_clone(url, path, shallow=shallow)
     elif args.name == CMAKE:
         if getattr(args, 'clone', False):
             ... #git_clone(env[CMAKE]['url'], LIB_DIR)

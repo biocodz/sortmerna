@@ -61,11 +61,6 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include "BooPHF.h"
 #include "options.hpp"
 
-#if defined(_WIN32)
-#include <Winsock.h>
-#endif
-
-
 
 //! burst trie nucleotide map
 /*! the trie nodes consist of an array holding four

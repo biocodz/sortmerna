@@ -39,13 +39,8 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include <iostream> // std::cout
 
 #include <sys/time.h>
+#include <fstream>
 #include "config.h"
-#if defined(_WIN32)
-#  include "windows.h"
-#  include "psapi.h"
-#else
-#  include <fstream>
-#endif
 
 const char FASTA_HEADER_START = '>';
 const char FASTQ_HEADER_START = '@';
@@ -98,25 +93,14 @@ extern timeval t;
 #define TIME(x) gettimeofday(&t, NULL); x = t.tv_sec + (t.tv_usec/1000000.0);
 
 /*! @brief start color text red */
-#if defined(_WIN32)
-#  define RED    ""
-#  define GREEN  ""
-#  define YELLOW ""
-#  define BLUE   ""
-#  define BOLD   ""
-#  define UNDL   ""
-#  define COLOFF ""
-const char DELIM = ';';
-#else
-#  define RED    "\033[0;31m"
-#  define GREEN  "\033[0;32m"
-#  define YELLOW "\033[0;33m"
-#  define BLUE   "\033[0;34m"
-#  define BOLD   "\033[1m"
-#  define UNDL   "\033[4m" // underline
-#  define COLOFF "\033[0m" // color off
+#define RED    "\033[0;31m"
+#define GREEN  "\033[0;32m"
+#define YELLOW "\033[0;33m"
+#define BLUE   "\033[0;34m"
+#define BOLD   "\033[1m"
+#define UNDL   "\033[4m" // underline
+#define COLOFF "\033[0m" // color off
 const char DELIM = ':';
-#endif
 
 //#define LOCKQUEUE // Lock queue with mutexes
 #define CONCURRENTQUEUE // lockless queue
@@ -130,14 +114,6 @@ static inline std::string fold_to_string(Args&&... args) {
     return ss.str();
 }
 
-// https://stackoverflow.com/questions/63166/how-to-determine-cpu-and-memory-consumption-from-inside-a-process
-#if defined(_WIN32)
-static inline size_t get_memory() {
-    PROCESS_MEMORY_COUNTERS_EX pmc;
-    GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
-    return pmc.PrivateUsage; // process Commit memory (== Resource Monitor:Commit)
-}
-#else
 /*
  * amount of memory that have been mapped into the process' address space
  * cat /proc/self/status | grep 'VmRSS:'
@@ -172,7 +148,6 @@ static inline size_t get_memory() {
     }
     return mem;
 }
-#endif
 
 #define INFO(...) \
 	{\
