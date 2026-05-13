@@ -35,6 +35,30 @@ validate:
       num_fail:     153
     aligned.fq.gz: 9847
     other.fq.gz:    153
+  indices:
+    smr_v4.3_default_db:
+      stats:
+        numseq: 73977
+        full_len: 133533894
+        part_num: 1
+        seed_win_len: 18
+        background_freq: {A: 0.2576, C: 0.2225, G: 0.2958, T: 0.2241}
+        parts:
+          - numseq_part: 73977
+            seq_part_size: 146741693
+      files:
+        stats: 3384965
+        bursttrie_0.dat: 693310680
+        pos_0.dat: 1191134108
+        kmer_0.dat: 1048576
+      kmer:
+        num_nonzero: 262144
+        total_count: 132465678
+        max_count: 50089
+      pos:
+        num_elements: 37168350
+        total_positions: 130307588
+        max_positions: 10000
 time:
   wsl_ubuntu_24.04.2_LTS_xps15i9_16_32:  # data/sortmerna/logs/20260503_102237_t46_xps15i9_wsl_ubuntu_v540.txt
     5.4.0:  # 20260503 Sun
