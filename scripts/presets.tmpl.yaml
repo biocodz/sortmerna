@@ -1,0 +1,118 @@
+#
+# 20260501 Fri  
+#   custom data to be used when parsing tests configs like t3.jinja.
+#   Command line values take precedence over these presets.
+#   on vscode the launch.json can be used instead of this file.
+#
+#   Change name presets.tmpl.yaml to presets.yaml and edit the values to your needs.
+#
+# python scripts/run.py test t3,t3_1,t18,t18_1,t19,t38,t39,t43,t46
+#
+all: t3,t3_1,t18,t18_1,t19,t19_1,t19_3,t19_5,t19_6,t19_7,t20,t20_1,t20_5,t20_6,t39
+all_big: t38,t43,t46
+t3: [
+  "--smr-exe", "dist/bin/sortmerna",
+  "--ref-dir", "data",
+  "--data-dir", "data",
+  "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t3_1: [
+  "--smr-exe", "dist/bin/sortmerna",
+  "--ref-dir", "data",
+  "--data-dir", "data",
+  "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t18: [
+  "--smr-exe", "dist/bin/sortmerna",
+  "--ref-dir", "data",
+  "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+  "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t18_1: [
+  "--smr-exe", "dist/bin/sortmerna",
+  "--ref-dir", "data",
+  "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+  "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19: [
+  "--smr-exe", "dist/bin/sortmerna",
+  "--ref-dir", "data",
+  "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+  "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19_1: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19_3: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19_5: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19_6: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t19_7: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t20: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t20_1: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t20_5: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+t20_6: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+# 12MB ref, 50M reads
+t38: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run",
+    "--task", "4"
+]
+t39: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+# 8 refs, 50M reads stress test
+t43: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "data/rRNA_databases",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
+# 140MB ref, 10K reads
+t46: [
+    "--smr-exe", "dist/bin/sortmerna",
+    "--ref-dir", "/mnt/c/Users/biocodz/a1/code/sortmerna/data/rRNA_databases",
+    "--data-dir", "/mnt/c/Users/biocodz/a1/data/bio/reads/rna",
+    "--workdir", "/home/biocodz/a1/data/sortmerna/run"
+]
