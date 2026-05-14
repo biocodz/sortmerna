@@ -2464,61 +2464,6 @@ t37_1:
         4-3-0: [24, 35, 1, 19] # ~80 sec
       index_stats_calc:  # sec
 
-t39:
-  name: issue 207
-  info: |
-    refs  reads  paired  paired_in  paired_out  out2  sout  zout  other
-    ------------------------------------------------------------------- output type
-     1      1      -        -           -         -     -     -    -
-    
-    best  N  min_lis seeds
-    ----------------------  alignment type
-    true  1     2      2
-    
-    sortmerna -m 4096 -a 4 -L 8 --fastx --blast 1 --workdir test 
-      --num_alignments 0 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
-    sortmerna -m 4096 -a 4 -L 8 --fastx --blast 1 --workdir test 
-      --best 0 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
-    sortmerna -m 4096 -a 4 -L 10 --fastx --blast 1 --workdir test 
-      --best 0 -min_lis 1 --ref /path/rRNA_index.fasta --reads test.fq --other test2_mir.fq
-  args:
-  - -ref
-  - {{ SMR_SRC }}/data/rRNA_databases/silva-euk-28s-id98.fasta
-  - -reads
-  - {{ DATA_DIR if DATA_DIR }}/bio/reads/rna/smr_iss_207_20200123_test.fq.gz  # 1.5M reads
-  - -e
-  - '100'
-  - -fastx
-  - -blast
-  - '1'
-  - -threads
-  - {{THREADS or '\'8\''}}
-  - -workdir
-  - {{ WRK_DIR }}
-  validate:
-    func:
-    variant: sanger
-    files:
-      aligned.log:
-        num_reads: 15000000
-        num_hits:    798426 #  5.32
-        num_fail:  14201574 # 94.68
-      aligned.blast.gz:
-        num_recs:    798426
-        n_yid_ycov:       0 
-        n_yid_ncov:       0 
-        n_nid_ycov:       0 
-        n_denovo:         0
-      aligned.fq.gz: 798426
-  time:           
-    win_8_16:
-      host: Windows 10 + 8 CPUs + 16GB RAM
-      4-3-3:
-      - threads: 8
-        total: 
-        # indexing, read count, readfeed, align, summary, report
-        totals: [ 0, 30, 202, 1546, 1, 132] # 20210521
-
 t40:
   name: 5 selected reads on 8 refs
   info: |

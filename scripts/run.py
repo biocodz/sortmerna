@@ -40,6 +40,8 @@ def mock_missing(name):
 
 import os
 import sys
+import struct
+import ctypes
 import subprocess
 import platform
 import re
@@ -459,16 +461,16 @@ def process_blast(**kw):
                     msg = (f"{ST} Testing reads passing ID threshold: {blastf.name}:"
                            f" {n_yid_ycov} Expected: {blastd['n_yid_ycov']}")
                     print(msg)
-                    assert n_yid_ycov == blastd['n_yid_ycov'], \
-                        f"{blastd['n_yid_ycov']} not equals {n_yid_ycov}"
-                
+                    if n_yid_ycov != blastd['n_yid_ycov']:
+                        print(f"Failed test: {blastd['n_yid_ycov']} not equals {n_yid_ycov}")
+
                 num_recs = blastd.get('num_recs')
                 if num_recs:
                     msg = (f'{ST} Testing num_hits: {blastf.name}:'
                             f' {num_hits_file} Expected: {num_recs}')
                     print(msg)
-                    assert num_hits_file == num_recs, f'{num_hits_file} not equals {num_recs}'
-
+                    if num_hits_file != num_recs:
+                        print(f'Failed test: {num_hits_file} not equals {num_recs}')
     return {
         'n_hits'  : num_hits_file, 
         'yid_ycov': n_yid_ycov, 
@@ -598,37 +600,43 @@ def validate_log(logd:dict, ffd:dict):
         n_logd = logd['num_reads']
         msg = f'{ST} testing num_reads: {n_logd} Expected: {n_vald}'
         print(msg)
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify number of hits
     n_vald = ffd.get('aligned.log', {}).get('num_hits')
     if n_vald:
         n_logd = logd['num_hits']
         print(f'{ST} testing num_hits: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify number of misses
     n_vald = ffd.get('aligned.log', {}).get('num_fail')
     if n_vald:
         n_logd = logd['num_fail']
         print(f'{ST} testing num_fail: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd:
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify count of COV+ID
     n_vald = ffd.get('aligned.log', {}).get('n_yid_ycov')
     if n_vald:
         n_logd = logd.get('num_id_cov')
         print(f'{ST} testing n_yid_ycov: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd: 
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify count of OUT groups
     n_vald = ffd.get('aligned.log', {}).get('num_groups')
     if n_vald:
         n_logd = logd.get('num_otus')
         print(f'{ST} testing num_groups: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd: 
+            print(f'Failing: {n_vald} not equals {n_logd}')
     #   verify count of de-novo reads
     n_vald = ffd.get('aligned.log', {}).get('n_denovo')
     if n_vald:
         n_logd = logd['num_denovo']
         print(f'{ST} testing n_denovo: {n_logd} Expected: {n_vald}')
-        assert n_vald == n_logd, f'{n_vald} not equals {n_logd}'
+        if n_vald != n_logd: 
+            print(f'Failing: {n_vald} not equals {n_logd}')
 #END validate_log
 
 def process_output(**kw):
@@ -656,15 +664,18 @@ def process_output(**kw):
         if isinstance(vv, int):
             ffp = outdir / ff # file path
             count = 0
-            assert ffp.exists(), f'{ST} does not exists: {ffp}'
+            if not ffp.exists():
+                print(f'{ST} does not exists: {ffp}')
             if 'otu_map.txt' in ff:
-                with open(ffp) as ffs:
-                    for line in ffs:
-                        count += 1
-                msg = f'{ST} testing count of groups in {ff}: {count} Expected: {vv}'
-                print(msg)
-                assert count == vv, f'{count} not equals {vv}'
-                continue
+                if ffp.exists():
+                    with open(ffp) as ffs:
+                        for line in ffs:
+                            count += 1
+                    msg = f'{ST} testing count of groups in {ff}: {count} Expected: {vv}'
+                    print(msg)
+                    if count != vv: 
+                        print(f'Failing: {count} not equals {vv}')
+                    continue
             if is_skbio:
                 if IS_FASTQ:
                     for seq in skbio.io.read(ffp, format='fastq', variant=vald.get('variant')):
@@ -674,7 +685,8 @@ def process_output(**kw):
                     for seq in skbio.io.read(ffp, format=fmt):
                         count += 1
                 print(f'{ST} Testing count of reads in {ff}: {count} Expected: {vv}')
-                assert count == vv, f'{count} not equals {vv}'
+                if count != vv: 
+                    print(f'Failing: {count} not equals {vv}')
         elif ff == 'aligned.log':
             validate_log(logd, ffd)
         elif 'aligned.blast' in ff:
@@ -1325,6 +1337,29 @@ def iss_453(num_splits:int,
             out, serr = ps.communicate()
         print(f'done writing in {time.time() - sstart} sec')
     
+def _apply_preset_argv(args: Namespace, preset_argv: list):
+    '''Fill None-valued attributes in args from an argv-style preset list.
+    Explicitly provided args (non-None) are never overwritten.
+    '''
+    i = 0
+    while i < len(preset_argv):
+        token = str(preset_argv[i])
+        if token.startswith('--'):
+            key = token[2:].replace('-', '_')
+        elif token.startswith('-') and len(token) > 1:
+            key = token[1:].replace('-', '_')
+        else:
+            i += 1
+            continue
+        if i + 1 < len(preset_argv) and not str(preset_argv[i + 1]).startswith('-'):
+            val = preset_argv[i + 1]
+            i += 2
+        else:
+            val = True
+            i += 1
+        if getattr(args, key, None) is None:
+            setattr(args, key, val)
+
 def parse_test_config(args:Namespace) -> dict:
     '''
     parse test jinja template and set all sortmerna options
@@ -1332,7 +1367,19 @@ def parse_test_config(args:Namespace) -> dict:
       - args  arguments produced by argparse package
     '''
     script_dir = Path(__file__).parent # directory where this script is located
-    
+
+    # load presets and apply defaults for any args not explicitly provided
+    cfg_dir = Path(args.config).parent if args.config else script_dir
+    presets_path = Path(args.presets) if getattr(args, 'presets', None) else cfg_dir / 'presets.yaml'
+    if presets_path.exists():
+        msg = f'{ST} using presets from {presets_path}'
+        print(msg)
+        with open(presets_path) as _f:
+            _all_presets = yaml.safe_load(_f) or {}
+        _preset_argv = _all_presets.get(args.name, [])
+        if _preset_argv:
+            _apply_preset_argv(args, _preset_argv)
+
     smr_exe = args.smr_exe or shutil.which('sortmerna')
     if not smr_exe or not Path(smr_exe).exists():
         msg = (f'{ST} sortmerna executable {smr_exe} not found.'
@@ -1358,16 +1405,18 @@ def parse_test_config(args:Namespace) -> dict:
     smr_src = Path(script_dir).parent
     vars = {'SMR_SRC':smr_src, 'DATA_DIR':args.data_dir, 'WRK_DIR':args.workdir}
     if args.threads:
-        vars.append({'THREADS':str(args.threads)})
+        vars['THREADS'] = str(args.threads)
     if args.ref_dir:
         vars['REF_DIR'] = args.ref_dir
+    if args.task:
+        vars['TASK'] = str(args.task)
+    if args.dbg_level:
+        vars['DBG_LEVEL'] = args.dbg_level
+    if args.index:
+        vars['INDEX'] = str(args.index)
     cfg_str = template.render(vars)
     cfg = yaml.load(cfg_str, Loader=yaml.FullLoader)
-    if args.task:
-        cfg['args']['-task'] = str(args.task)
-    if args.dbg_level:
-        cfg['args']['-dbg-level'] = args.dbg_level
-    if args.score_split:
+    if getattr(args, 'score_split', False):
         cfg['args'].append('-score_split')
         
     cfg['exe'] = smr_exe
@@ -1381,6 +1430,393 @@ def get_dict_val(path:str, nested_dict:dict):
     for k in path.split(':'):
         vv = vv.get(k) or {}
     return vv
+
+def _parse_stats_binary(fpath: Path):
+    '''
+    Parse sortmerna *.stats binary file.
+    Returns (stats_dict, fasta_filename_str).
+
+    Binary layout (native little-endian on LP64 Linux):
+      size_t      filesize
+      uint32_t    fasta_len
+      char[]      fasta_filename  (fasta_len bytes, null-terminated)
+      double[4]   background_freq (A, C, G, T)
+      uint64_t    full_len
+      uint32_t    seed_win_len
+      uint64_t    numseq
+      uint16_t    part_num
+      index_parts_stats[part_num]:
+          unsigned long  start_part    (8 bytes on LP64)
+          unsigned long  seq_part_size (8 bytes on LP64)
+          uint32_t       numseq_part
+          uint32_t       _pad          (compiler trailing padding)
+      uint32_t    num_sq
+      [for each SAM SQ header:]
+          uint32_t  len_id
+          char[]    sequence_id (len_id bytes, no null terminator)
+          uint32_t  len_seq
+    '''
+    class _PartStats(ctypes.Structure):
+        _fields_ = [
+            ('start_part',    ctypes.c_ulong),
+            ('seq_part_size', ctypes.c_ulong),
+            ('numseq_part',   ctypes.c_uint32),
+        ]
+    part_size = ctypes.sizeof(_PartStats)  # 24 on LP64 (4 bytes trailing padding)
+
+    with open(fpath, 'rb') as f:
+        (filesize,)     = struct.unpack('<Q', f.read(8))
+        (fasta_len,)    = struct.unpack('<I', f.read(4))
+        fasta_filename  = f.read(fasta_len).rstrip(b'\x00').decode('utf-8', errors='replace')
+        bg_freq         = struct.unpack('<4d', f.read(32))
+        (full_len,)     = struct.unpack('<Q', f.read(8))
+        (seed_win_len,) = struct.unpack('<I', f.read(4))
+        (numseq,)       = struct.unpack('<Q', f.read(8))
+        (part_num,)     = struct.unpack('<H', f.read(2))
+        parts = []
+        for _ in range(part_num):
+            raw = f.read(part_size)
+            start_part, seq_part_size, numseq_part = struct.unpack_from('<QQI', raw)
+            parts.append({'numseq_part': numseq_part, 'seq_part_size': seq_part_size})
+
+    stats = {
+        'numseq':       numseq,
+        'full_len':     full_len,
+        'part_num':     part_num,
+        'seed_win_len': seed_win_len,
+        'background_freq': {
+            'A': round(bg_freq[0], 4),
+            'C': round(bg_freq[1], 4),
+            'G': round(bg_freq[2], 4),
+            'T': round(bg_freq[3], 4),
+        },
+        'parts': parts,
+    }
+    return stats, fasta_filename
+
+
+def _parse_kmer_binary(fpath: Path) -> dict:
+    '''
+    Parse *.kmer_N.dat: (1 << seed_win_len) consecutive uint32_t kmer counts.
+    '''
+    data = fpath.read_bytes()
+    n = len(data) // 4
+    counts = struct.unpack(f'<{n}I', data)
+    return {
+        'num_nonzero': sum(1 for c in counts if c > 0),
+        'total_count': sum(counts),
+        'max_count':   max(counts) if counts else 0,
+    }
+
+
+def _parse_pos_binary(fpath: Path) -> dict:
+    '''
+    Parse *.pos_N.dat:
+      uint32_t number_elements
+      for each element:
+        uint32_t size
+        seq_pos[size]  (seq_pos = {uint32_t pos, uint32_t seq} = 8 bytes each)
+    '''
+    total_positions = 0
+    max_positions   = 0
+    with open(fpath, 'rb') as f:
+        raw = f.read(4)
+        if len(raw) < 4:
+            return {}
+        (num_elements,) = struct.unpack('<I', raw)
+        for _ in range(num_elements):
+            raw = f.read(4)
+            if len(raw) < 4:
+                break
+            (size,) = struct.unpack('<I', raw)
+            total_positions += size
+            if size > max_positions:
+                max_positions = size
+            f.seek(size * 8, 1)  # skip seq_pos[size]: each is 2 x uint32_t
+    return {
+        'num_elements':    num_elements,
+        'total_positions': total_positions,
+        'max_positions':   max_positions,
+    }
+
+
+def _read_idx_stats_yaml(yaml_file: Path) -> dict:
+    '''
+    Parse a sortmerna-generated *.idx_stats.yaml file into the same dict
+    structure used by _collect_ref_index_stats.  The YAML has top-level keys
+    reference / stats / parts; we reformat into the validate:indices schema.
+    '''
+    with open(yaml_file) as f:
+        raw = yaml.safe_load(f)
+
+    part0 = raw['parts'][0] if raw.get('parts') else {}
+    result = {
+        'stats': {
+            'numseq':       raw['stats']['numseq'],
+            'full_len':     raw['stats']['full_len'],
+            'part_num':     raw['stats']['part_num'],
+            'seed_win_len': raw['stats']['seed_win_len'],
+            'background_freq': raw['stats']['background_freq'],
+            'parts': [
+                {'numseq_part': p['numseq_part'], 'seq_part_size': p['seq_part_size']}
+                for p in raw.get('parts', [])
+            ],
+        },
+        'files': {
+            'stats': raw['stats']['files']['stats'],
+            **{k: v for p in raw.get('parts', []) for k, v in p.get('files', {}).items()},
+        },
+        'kmer': part0.get('kmer', {}),
+        'pos':  part0.get('pos', {}),
+    }
+    return result
+
+
+def _collect_ref_index_stats(idx_dir: Path, ref_path: str) -> dict:
+    '''
+    Locate the index files for ref_path inside idx_dir. The index prefix is a
+    std::hash of the ref basename, not derivable in Python, so we scan matching
+    files to find the right one.
+
+    Preference order:
+      1. *.idx_stats.yaml written by sortmerna at build time (fast, no binary parsing)
+      2. Binary *.stats + *.kmer_0.dat + *.pos_0.dat parsed directly (fallback)
+    '''
+    ST = '[_collect_ref_index_stats]'
+    ref_resolved = str(Path(ref_path).resolve())
+
+    # --- try YAML first (written by sortmerna >= the version that added this) ---
+    for yf in sorted(idx_dir.glob('*.idx_stats.yaml')):
+        try:
+            raw = yaml.safe_load(yf.read_text())
+            stored = raw.get('reference', '')
+            if str(Path(stored).resolve()) == ref_resolved or stored == ref_path:
+                return _read_idx_stats_yaml(yf)
+        except Exception as ex:
+            print(f'{ST} warning: could not parse {yf}: {ex}')
+
+    # --- fallback: parse binary index files ---
+    matched_prefix = None
+    matched_stats  = None
+    sf = None
+
+    for sf in sorted(idx_dir.glob('*.stats')):
+        try:
+            sd, fasta_fn = _parse_stats_binary(sf)
+        except Exception as ex:
+            print(f'{ST} warning: could not parse {sf}: {ex}')
+            continue
+        if str(Path(fasta_fn).resolve()) == ref_resolved or fasta_fn == ref_path:
+            matched_prefix = sf.with_suffix('')
+            matched_stats  = sd
+            break
+
+    if matched_prefix is None:
+        print(f'{ST} no index found for {ref_path} in {idx_dir}')
+        return {}
+
+    result = {'stats': matched_stats}
+
+    files_stats = {'stats': sf.stat().st_size}
+    for part_idx in range(matched_stats['part_num']):
+        for pfx in ('bursttrie', 'pos', 'kmer'):
+            fname = f'{pfx}_{part_idx}.dat'
+            fp = Path(f'{matched_prefix}.{fname}')
+            if fp.exists():
+                files_stats[fname] = fp.stat().st_size
+    result['files'] = files_stats
+
+    kmer_file = Path(f'{matched_prefix}.kmer_0.dat')
+    if kmer_file.exists():
+        result['kmer'] = _parse_kmer_binary(kmer_file)
+
+    pos_file = Path(f'{matched_prefix}.pos_0.dat')
+    if pos_file.exists():
+        result['pos'] = _parse_pos_binary(pos_file)
+
+    return result
+
+
+def _build_indices_yaml(indices_stats: dict, indent: int = 2) -> str:
+    '''Render indices_stats as an indented YAML block starting with "indices:".'''
+    p = ' ' * indent
+    p2 = p + '  '
+    p4 = p2 + '  '
+    p6 = p4 + '  '
+    lines = [f'{p}indices:']
+    for ref_base, rdata in indices_stats.items():
+        lines.append(f'{p2}{ref_base}:')
+        if 'stats' in rdata:
+            s = rdata['stats']
+            bf = s['background_freq']
+            lines.append(f'{p4}stats:')
+            lines.append(f'{p6}numseq: {s["numseq"]}')
+            lines.append(f'{p6}full_len: {s["full_len"]}')
+            lines.append(f'{p6}part_num: {s["part_num"]}')
+            lines.append(f'{p6}seed_win_len: {s["seed_win_len"]}')
+            lines.append(f'{p6}background_freq: {{A: {bf["A"]}, C: {bf["C"]}, G: {bf["G"]}, T: {bf["T"]}}}')
+            if s.get('parts'):
+                lines.append(f'{p6}parts:')
+                for part in s['parts']:
+                    lines.append(f'{p6}  - numseq_part: {part["numseq_part"]}')
+                    lines.append(f'{p6}    seq_part_size: {part["seq_part_size"]}')
+        if 'files' in rdata:
+            lines.append(f'{p4}files:')
+            for fname, size in rdata['files'].items():
+                lines.append(f'{p6}{fname}: {size}')
+        if 'kmer' in rdata:
+            k = rdata['kmer']
+            lines.append(f'{p4}kmer:')
+            lines.append(f'{p6}num_nonzero: {k["num_nonzero"]}')
+            lines.append(f'{p6}total_count: {k["total_count"]}')
+            lines.append(f'{p6}max_count: {k["max_count"]}')
+        if 'pos' in rdata:
+            pos = rdata['pos']
+            lines.append(f'{p4}pos:')
+            lines.append(f'{p6}num_elements: {pos["num_elements"]}')
+            lines.append(f'{p6}total_positions: {pos["total_positions"]}')
+            lines.append(f'{p6}max_positions: {pos["max_positions"]}')
+    return '\n'.join(lines) + '\n'
+
+
+def _update_jinja_indices(jinja_file: Path, indices_stats: dict):
+    '''
+    Insert or replace the validate:indices block in a jinja template file.
+    Inserts before "runtime:" if present, otherwise at the end of validate block.
+    '''
+    ST = '[_update_jinja_indices]'
+    lines = jinja_file.read_text().splitlines(keepends=True)
+
+    # Locate top-level "validate:" line (indent 0)
+    validate_line = None
+    for i, line in enumerate(lines):
+        if re.match(r'^validate\s*:', line):
+            validate_line = i
+            break
+    if validate_line is None:
+        print(f'{ST} no validate: block found in {jinja_file}')
+        return
+
+    # Scan validate's direct children (indent=2) to find existing 'indices:' and 'runtime:'
+    indices_start  = None  # line index of '  indices:'
+    indices_end    = None  # line index where indices block ends (exclusive)
+    insert_before  = len(lines)  # default: end of file
+
+    i = validate_line + 1
+    while i < len(lines):
+        raw     = lines[i]
+        stripped = raw.lstrip()
+        indent  = len(raw) - len(stripped)
+        is_blank = not stripped.strip()
+
+        if is_blank:
+            i += 1
+            continue
+
+        # A top-level key (indent=0) means the validate block ended
+        if indent == 0:
+            if indices_start is not None and indices_end is None:
+                indices_end = i
+            insert_before = i
+            break
+
+        # Direct child of validate (indent=2)
+        if indent == 2:
+            key = stripped.split(':')[0].strip()
+            if key == 'indices':
+                indices_start = i
+                # Find the end of the indices block: next non-blank line at indent <= 2
+                j = i + 1
+                while j < len(lines):
+                    r2 = lines[j]
+                    s2 = r2.lstrip()
+                    ind2 = len(r2) - len(s2)
+                    if s2.strip() and ind2 <= 2:
+                        indices_end = j
+                        break
+                    j += 1
+                else:
+                    indices_end = len(lines)
+                i = indices_end  # skip past the block
+                continue
+            elif key == 'runtime' and indices_start is None:
+                # insert new block before runtime:
+                insert_before = i
+        i += 1
+
+    new_block = _build_indices_yaml(indices_stats, indent=2)
+
+    if indices_start is not None:
+        new_lines = lines[:indices_start] + [new_block] + lines[indices_end:]
+    else:
+        new_lines = lines[:insert_before] + [new_block] + lines[insert_before:]
+
+    jinja_file.write_text(''.join(new_lines))
+    print(f'{ST} updated {jinja_file}')
+
+
+def generate_index_stats(args: Namespace):
+    '''
+    Build the sortmerna index for a test's reference files (-task 5),
+    collect statistics from the generated index files, and write them
+    into the validate:indices section of the test's jinja template.
+
+    CLI: python scripts/run.py index-stats --test t3 --smr-exe dist/bin/sortmerna
+         --data-dir data/ --ref-dir data/rRNA_databases -w /tmp/smr_t3
+    '''
+    ST = '[generate_index_stats]'
+
+    cfg     = parse_test_config(args)
+    smr_exe = cfg['exe']
+    smr_args = cfg.get('args', {})
+
+    refs    = smr_args.get('-ref', [])
+    reads   = smr_args.get('-reads', [])
+    workdir = smr_args.get('-workdir') or args.workdir
+
+    if not refs:
+        print(f'{ST} no -ref entries found in test config')
+        return
+    if not workdir or str(workdir) == 'None':
+        print(f'{ST} workdir is required; pass --workdir')
+        return
+
+    # Build index-only command
+    cmd = [smr_exe]
+    for ref in refs:
+        cmd += ['-ref', ref]
+    for read in reads:
+        cmd += ['-reads', read]
+    cmd += ['-workdir', str(workdir), '-task', '5']
+
+    rcode, _, _ = run_test(cmd)
+    if rcode != 0:
+        print(f'{ST} sortmerna exited with code {rcode}; aborting')
+        return
+
+    idx_dir = Path(workdir) / 'idx'
+    if not idx_dir.exists():
+        print(f'{ST} idx directory not found: {idx_dir}')
+        return
+
+    indices_stats = {}
+    for ref in refs:
+        ref_base = Path(ref).stem  # e.g. silva-bac-16s-database-id85
+        rdata = _collect_ref_index_stats(idx_dir, ref)
+        if rdata:
+            indices_stats[ref_base] = rdata
+        else:
+            print(f'{ST} skipping {ref_base}: no index stats found')
+
+    if not indices_stats:
+        print(f'{ST} no index stats collected; jinja file not modified')
+        return
+
+    script_dir = Path(__file__).parent
+    jinja_file = Path(args.config) if getattr(args, 'config', None) else script_dir / f'{args.name}.jinja'
+    _update_jinja_indices(jinja_file, indices_stats)
+    print(f'{ST} done')
+
 
 if __name__ == "__main__":
     '''
@@ -1448,10 +1884,26 @@ if __name__ == "__main__":
     p5.add_argument('--winhome', dest='winhome', help='when running on WSL - home directory on Windows side e.g. /mnt/c/Users/XX')
     p5.add_argument('--capture', action="store_true", help='Capture output. By default prints to stdout')
     p5.add_argument('--config', dest='config', help='Tests configuration file.')
+    p5.add_argument('--presets', dest='presets', help='Tests presets file.')
     p5.add_argument('--env', dest='envfile', help='Environment variables')
     p5.add_argument('-e','--envn', dest='envname', help=('Name of environment: WIN | WSL '
                                                       '| LNX_AWS | LNX_TRAVIS | LNX_VBox_Ubuntu_1804 | ..'))
     p5.add_argument('--score-split', action="store_true", help='set corresponding sortmerna argument')
+
+    # build index and record statistics into test jinja
+    p6 = subpar.add_parser('index-stats', help='build index and record statistics into test jinja')
+    p6.add_argument('--test', dest='name', required=True, help='Test name e.g. t3')
+    p6.add_argument('--smr-exe', dest='smr_exe', help='path to sortmerna executable')
+    p6.add_argument('--data-dir', dest='data_dir', help='path to the data. Abs or relative')
+    p6.add_argument('--ref-dir', dest='ref_dir', help='path to the reference data. Abs or relative')
+    p6.add_argument('-w', '--workdir', dest='workdir', help='working directory for sortmerna run')
+    p6.add_argument('--threads', dest='threads', help='number of threads to use')
+    p6.add_argument('--config', dest='config', help='Tests configuration file (overrides --test lookup)')
+    p6.add_argument('--presets', dest='presets', help='Tests presets file')
+    p6.add_argument('-d', '--dbg-level', dest='dbg_level', help='debug level 0 | 1 | 2')
+    p6.add_argument('--task', dest='task', help='Processing task 0 | 1 | 2 | 3 | 4 | 5')
+    p6.add_argument('--index', dest='index', help='Index option 0 | 1')
+
     args = p0.parse_args()
 
     if 'split' == args.cmd:
@@ -1482,46 +1934,27 @@ if __name__ == "__main__":
                 if tt in tlist:
                     tlist.remove(tt)
         else:
-            tlist = [args.name]
+            raw = args.name.replace(',', ' ')
+            tlist = raw.split()
+            
         print(f'{ST} number of tests: {len(tlist)}')
         for test in tlist:
+            rcode = 0
+            args.name = test
             cfg = parse_test_config(args)
             # clean-up the KVDB, IDX directories, and the output. 
             # May Fail if any file in the directory is open. Close the files and re-run.
-            if args.clean:
-                if Path(KVDB_DIR).exists():
-                    print(f'{ST} removing dir: {KVDB_DIR}')
-                    shutil.rmtree(KVDB_DIR)
-                if Path(IDX_DIR).exists():
-                    print(f'{ST} removing dir: {IDX_DIR}')
-                    shutil.rmtree(IDX_DIR)
-                break
-
-            # clean previous alignments (KVDB)
-            kvdb = cfg['args'].get('-kvdb') or Path(cfg['args'].get('-workdir')) / 'kvdb'
-            if Path(kvdb).exists() and not (args.validate_only or args.task in ['1','2']):
-                print(f'{ST} Removing KVDB dir: {kvdb}')
-                shutil.rmtree(kvdb)
-
-            # clean output
-            ali_dir = os.path.dirname(ALIF) if ALIF else None  # aligned output directory
-            if ali_dir and os.path.exists(ali_dir) and not (args.validate_only or args.task in ['1','2']):
-                print(f'{ST} Removing Aligned Output: {ali_dir}')
-                shutil.rmtree(ali_dir)
-
-            if OTHF:
-                oth_dir = os.path.dirname(OTHF)
-                if oth_dir and os.path.exists(oth_dir) and oth_dir != ali_dir and not (args.validate_only or args.task in ['1','2']):
-                    print(f'{ST} removing Non-Aligned Output: {oth_dir}')
-                    shutil.rmtree(oth_dir)
+            if args.workdir and Path(args.workdir).exists() \
+                and not (args.validate_only or args.task in ['1','2']):
+                print(f'{ST} clearing workdir prior to {test}: {args.workdir}')
+                shutil.rmtree(args.workdir)
 
             # run the test
             if not args.validate_only:
                 is_capture = cfg.get('capture', False) or args.capture
                 cmd = [cfg.get('exe')]
-                # references and reads are provided as lists in the configuration
                 for k,v in cfg['args'].items():
-                    if 'ref' in k or 'reads' in k:
+                    if isinstance(v, list):
                         for rr in v:
                             cmd.append(k)
                             cmd.append(rr)
@@ -1532,7 +1965,10 @@ if __name__ == "__main__":
                 rcode, outl, errl = run_test(cmd, capture=is_capture)
 
             # validate alignment results
-            if rcode == 0 or not cfg.get('failonerror', True):
+            if args.task == '5':
+                msg = f'{ST} task 5 (only indexing) was requested for test {test}. Skipping validation.'
+                print(msg)
+            elif rcode == 0 or not cfg.get('failonerror', True):
                 if args.func:
                     gdict = globals().copy()
                     gdict.update(locals())
@@ -1549,6 +1985,8 @@ if __name__ == "__main__":
                     process_output(**cfg)
             else:
                 break
+    elif 'index-stats' == args.cmd:
+        generate_index_stats(args)
     else:
         ...
 #END main

@@ -38,6 +38,8 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
  /** @file */
 
 #include <time.h>
+#include <algorithm>
+#include <cassert>
 #include <string>
 #include <vector>
 #include <deque>
@@ -56,18 +58,8 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include "version.h"
 #include "build_version.h"
 #include "indexdb.hpp"
-#include "cmph.h"
+#include "BooPHF.h"
 #include "options.hpp"
-
-#if defined(_WIN32)
-#include <Winsock.h>
-const std::string ENV_TMPDIR = "TMP";
-const char PATH_SEPARATOR = '\\';
-#else
-const std::string ENV_TMPDIR = "TMPDIR";
-const char PATH_SEPARATOR = '/';
-#endif
-
 
 
 //! burst trie nucleotide map
@@ -982,139 +974,22 @@ namespace {
 	}//~printlist()
 }
 
-void get_keys_file(std::string &keys_file, Runopts &opts)
-{
-	std::stringstream ss;
-	ss << "sortmerna_keys_" << getpid() << ".txt";
-	keys_file = opts.workdir.string() + ss.str();
 
-	std::fstream ifs(keys_file, std::ios_base::out | std::ios_base::binary);
-	if (ifs.is_open())
-	{
-		ifs.close();
-	}
-	else
-	{
-		ERR("Failed writing to file: " + keys_file + " Error: " + strerror(errno));
-	}
-} //~get_keys_file
-
-/**
- * TODO: remove - not used any longer. Outdated
- *
- * Prepare the temporary file for storing keys of all s-mer (19-mer) words
- * of the reference sequences.
- * Required for CMPH to build the hash functions. See 'cmph_io_nlfile_adapter(keys)'
- */
-void get_keys_str(std::string &keys_str)
-{
-	std::stringstream ss;
-
-	char* tmpdir_env = NULL;
-	char pidStr[4000];
-
-	int32_t pid = getpid();
-	sprintf(pidStr, "%d", pid);
-
-	// try $TMPDIR, /tmp and local directories
-	bool try_further = true;
-
-	// try TMPDIR
-	tmpdir_env = getenv(ENV_TMPDIR.data());
-	if (tmpdir_env != NULL && strcmp(tmpdir_env, "") != 0)
-	{
-		std::string tmp_dir(tmpdir_env);
-		if (tmp_dir[tmp_dir.size() - 1] != PATH_SEPARATOR)
-			tmp_dir += PATH_SEPARATOR;
-
-		std::string tmp_file = tmp_dir + "test" + pidStr + ".txt";
-
-		FILE *tmp = fopen(tmp_file.data(), "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in directory [" << tmpdir_env << "]: " << strerror(errno) << std::endl
-				<< "  will try /tmp/.";
-			WARN(ss.str());
-		}
-		else
-		{
-			// remove the temporary test file
-			fclose(tmp);
-			if (remove(tmp_file.data()) != 0)
-			{
-				ss.str("");
-				ss << "Could not delete temporary file " << tmp_file.data();
-				WARN(ss.str());
-			}
-			// set working directory
-			keys_str += tmp_dir;
-			//memcpy(keys_str.data(), tmp_dir.data(), 4000);
-			try_further = false;
-		}
-	}
-
-	// try "/tmp" directory
-	if (try_further)
-	{
-		char tmp_str[4000] = "";
-		strcat(tmp_str, "/tmp/test_");
-		strcat(tmp_str, pidStr);
-		strcat(tmp_str, ".txt");
-
-		FILE *tmp = fopen(tmp_str, "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in directory /tmp/: " << strerror(errno) << std::endl
-				<< "  will try local directory.";
-			WARN(ss.str());
-		}
-		else
-		{
-			// remove the temporary test file
-			if (remove(tmp_str) != 0)
-				std::cerr << YELLOW << "  WARNING" << COLOFF << ": could not delete temporary file " << tmp_str << std::endl;
-
-			// set working directory
-			strcat(keys_str.data(), "/tmp/");
-
-			try_further = false;
-		}
-	}
-
-	// try the local directory
-	if (try_further)
-	{
-		char tmp_str[4000] = "";
-		strcat(tmp_str, "./test_");
-		strcat(tmp_str, pidStr);
-		strcat(tmp_str, ".txt");
-
-		FILE *tmp = fopen(tmp_str, "w+");
-		if (tmp == NULL)
-		{
-			ss.str("");
-			ss << "No write permissions in current directory: " << strerror(errno) << std::endl
-				<< "  Please set --tmpdir to a writable directory,"
-				<< " or change the write permissions in $TMPDIR, e.g. /tmp/ (Linux), or current directory.";
-			ERR(ss.str());
-			exit(EXIT_FAILURE);
-		}
-		else
-		{
-			// remove the temporary test file
-			if (remove(tmp_str) != 0)
-				std::cerr << YELLOW << "  WARNING" << COLOFF << ": could not delete temporary file " << tmp_str << std::endl;
-
-			// set working directory
-			strcat(keys_str.data(), "./");
-			try_further = false;
-		}
-	}
-
-	keys_str = keys_str + "sortmerna_keys_" + pidStr + ".txt";
-} // ~get_keys_str
+// Per-partition statistics collected while writing index binary files.
+// Written to *.idx_stats.yaml alongside the binary index files.
+struct idx_yaml_part {
+	uint32_t numseq_part;
+	uint64_t seq_part_size;
+	uint32_t kmer_num_nonzero;
+	uint64_t kmer_total_count;
+	uint32_t kmer_max_count;
+	uint32_t pos_num_elements;
+	uint64_t pos_total_positions;
+	uint32_t pos_max_positions;
+	uint64_t kmer_file_bytes;
+	uint64_t bursttrie_file_bytes;
+	uint64_t pos_file_bytes;
+};
 
 int build_index(Runopts& opts)
 {
@@ -1130,10 +1005,8 @@ int build_index(Runopts& opts)
 	mask32 = (1 << opts.seed_win_len) - 1;
 	mask64 = (2ULL << ((pread_gv * 2) - 1)) - 1;
 
-	// temp file for storing keys of all s-mer (19-mer) words of the reference sequences. 
-	// Required for CMPH to build minimal perfect hash functions
-	std::string keys_file;
-	get_keys_file(keys_file, opts);
+	// vector accumulating unique 18-mer keys for each index part (used to build BBHash MPHF)
+	std::vector<uint64_t> keys_vec;
 
 	if (opts.is_verbose) {
 		INFO_NS(
@@ -1157,9 +1030,10 @@ int build_index(Runopts& opts)
 	{
 		std::vector< std::pair<std::string, uint32_t> > sam_sq_header;
 
-		// vector of structs storing information on which sequences from 
+		// vector of structs storing information on which sequences from
 		// the original FASTA file were added to each index part
 		std::vector<index_parts_stats> index_parts_stats_vec;
+		std::vector<idx_yaml_part> yaml_parts;
 
 		// Open reference file for reading
 		FILE *fp = fopen(idxpair.first.data(), "r");
@@ -1296,14 +1170,7 @@ int build_index(Runopts& opts)
 			// set the file pointer to the beginning of the current part
 			start_part = ftell(fp);
 
-			// store all s-mer (19-mer) words of the reference sequences in a file. 
-			// Required for CMPH to build minimal perfect hash functions
-			FILE *keys = fopen(keys_file.c_str(), "w+");
-			if (keys == NULL)
-			{
-				ERR("Could not open [" , keys_file , "] file for writing");
-				exit(EXIT_FAILURE);
-			}
+			keys_vec.clear();
 
 			// count of unique 19-mers in database
 			uint32_t number_elements = 0;
@@ -1501,7 +1368,7 @@ int build_index(Runopts& opts)
 					{
 						// increment number of unique 18-mers
 						number_elements++;
-						fprintf(keys, "%llu\n", (kmer_key >> 2));
+						keys_vec.push_back(kmer_key >> 2);
 					}
 
 					// ****** add the reverse 19-mer
@@ -1557,7 +1424,6 @@ int build_index(Runopts& opts)
 			// continue to build hash and positions tables
 			else index_size = 0;
 
-			rewind(keys);
 			elapsed = std::chrono::high_resolution_clock::now() - st;
 
 			if (opts.is_verbose)
@@ -1565,38 +1431,41 @@ int build_index(Runopts& opts)
 
 			// 4. build MPHF on the unique 18-mers
 			if (opts.is_verbose)
-				INFO_NS("    (2/3) building CMPH hash ..");
+				INFO_NS("    (2/3) building BBHash MPHF ..");
 
 			st = std::chrono::high_resolution_clock::now();
-			cmph_t *hash = NULL;
 
-			FILE * keys_fd = keys;
-			if (keys_fd == NULL)
+			// Bug 2 check: duplicates in keys_vec cause incorrect MPHF
+			assert(keys_vec.size() == number_elements && "keys_vec size != number_elements");
 			{
-				ERR("File '", keys_file, "' not found");
-				exit(EXIT_FAILURE);
+				std::vector<uint64_t> sorted_keys(keys_vec);
+				std::sort(sorted_keys.begin(), sorted_keys.end());
+				auto dup = std::adjacent_find(sorted_keys.begin(), sorted_keys.end());
+				assert(dup == sorted_keys.end() && "Duplicate keys in keys_vec - BBHash will be incorrect");
 			}
-			cmph_io_adapter_t *source = cmph_io_nlfile_adapter(keys_fd);
 
-			cmph_config_t *config = cmph_config_new(source);
-			cmph_config_set_algo(config, CMPH_CHM);
-			hash = cmph_new(config);
-			cmph_config_destroy(config);
+			using hasher_t = boomphf::SingleHashFunctor<uint64_t>;
+			using boophf_t = boomphf::mphf<uint64_t, hasher_t>;
+			boophf_t* hash = new boophf_t(keys_vec.size(), keys_vec, 1, 2.0, false, false);
 
-			// Destroy file adapter
-			cmph_io_nlfile_adapter_destroy(source);
-			fclose(keys_fd);
+			// Bug 3 check: all IDs must be in [0, number_elements) AND be unique
+			{
+				std::vector<bool> seen(number_elements, false);
+				for (uint64_t k : keys_vec) {
+					uint64_t vid = hash->lookup(k);
+					assert(vid < number_elements && "BBHash assigned ID >= number_elements");
+					assert(!seen[vid] && "BBHash assigned duplicate ID - not a perfect hash");
+					seen[vid] = true;
+				}
+			}
 
 			if (opts.is_verbose) {
 				elapsed = std::chrono::high_resolution_clock::now() - st;
 				INFO_NS(" done  [", elapsed.count(), " sec]\n");
 			}
 
-			int ret = remove(keys_file.c_str());
-			if (ret != 0)
-			{
-				WARN("Could not delete temporary file ", keys_file);
-			}
+			keys_vec.clear();
+			keys_vec.shrink_to_fit();
 
 			// 5. add ids to burst trie
 			// 6. build the positions lookup table using MPHF
@@ -1709,11 +1578,10 @@ int build_index(Runopts& opts)
 				// for all 19-mers on the sequence
 				for (uint32_t j = 0; j < numwin; j++) //TESTING
 				{
-					// character array to hold an unsigned long long integer for CMPH
-					char a[38] = { 0 };
-					sprintf(a, "%llu", (kmer_key >> 2));
-					const char *key = a;
-					id = cmph_search(hash, key, (cmph_uint32)strlen(key));
+					// Bug 1 check: BBHash silently returns a false-positive for absent keys
+					uint64_t raw_id = hash->lookup(kmer_key >> 2);
+					assert(raw_id < number_elements && "BBHash lookup returned out-of-range id - key not in MPHF");
+					id = static_cast<uint32_t>(raw_id);
 
 					//cout << "\t" << id << "=" << (kmer_key>>2); //TESTING
 
@@ -1750,8 +1618,7 @@ int build_index(Runopts& opts)
 				INFO_NS("    total number of sequences in this part = ", i, "\n");
 			}
 
-			// Destroy hash
-			cmph_destroy(hash);
+			delete hash;
 
 			// *********** Check ID's in Burst trie are correct *****
 
@@ -1946,7 +1813,6 @@ int build_index(Runopts& opts)
 			}
 
 			if (opts.is_verbose) {
-				INFO_NS("      temporary file was here: ", keys_file.data(), "\n");
 				INFO_NS("      writing kmer data to ", idx_file.data(), "\n")
 			}
 
@@ -1957,12 +1823,18 @@ int build_index(Runopts& opts)
 			index_parts_stats_vec.push_back(thispart);
 
 			// the 9-mer look up tables
+			uint32_t kmer_nonzero = 0, kmer_max = 0;
+			uint64_t kmer_total = 0;
 			for (uint32_t j = 0; j < (uint32_t)(1 << opts.seed_win_len); j++)
 			{
-				oskmer.write(reinterpret_cast<const char*>(&(lookup_table[j].count)),
-					sizeof(uint32_t));
+				uint32_t cnt = lookup_table[j].count;
+				oskmer.write(reinterpret_cast<const char*>(&cnt), sizeof(uint32_t));
+				if (cnt > 0) ++kmer_nonzero;
+				kmer_total += cnt;
+				if (cnt > kmer_max) kmer_max = cnt;
 			}
 			oskmer.close();
+			uint64_t kmer_file_bytes = std::filesystem::file_size(idx_file);
 
 			// 2. mini-burst tries
 			// load 9-mer look-up table and mini-burst tries to /index/bursttrief.dat
@@ -1972,6 +1844,7 @@ int build_index(Runopts& opts)
 			}
 
 			load_index(lookup_table, (char*)idx_file.data(), opts);
+			uint64_t bursttrie_file_bytes = std::filesystem::file_size(idx_file);
 
 			// 3. 19-mer position look up tables
 			idx_file = idxpair.second + ".pos_" + part_str + ".dat";
@@ -1984,13 +1857,26 @@ int build_index(Runopts& opts)
 			// number of unique 19-mers
 			ospos.write(reinterpret_cast<const char*>(&number_elements), sizeof(uint32_t));
 			// the positions
+			uint64_t pos_total = 0;
+			uint32_t pos_max = 0;
 			for (uint32_t j = 0; j < number_elements; j++)
 			{
 				uint32_t size = positions_tbl[j].size;
 				ospos.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
 				ospos.write(reinterpret_cast<const char*>(positions_tbl[j].arr), sizeof(seq_pos)*size);
+				pos_total += size;
+				if (size > pos_max) pos_max = size;
 			}
 			ospos.close();
+			uint64_t pos_file_bytes = std::filesystem::file_size(idx_file);
+
+			// stash per-part stats for YAML output
+			yaml_parts.push_back({
+				numseq_part, seq_part_size,
+				kmer_nonzero, kmer_total, kmer_max,
+				number_elements, pos_total, pos_max,
+				kmer_file_bytes, bursttrie_file_bytes, pos_file_bytes
+			});
 
 			// Free malloc'd memory
 			// Table of unique 19-mer positions
@@ -2079,6 +1965,56 @@ int build_index(Runopts& opts)
 				stats.write(reinterpret_cast<const char*>(&(samheader.second)), sizeof(uint32_t));
 			}
 			stats.close();
+
+			// Write human-readable YAML index statistics alongside the binary files.
+			// background_freq is already normalized at this point (division done above).
+			std::string yaml_path = idxpair.second + ".idx_stats.yaml";
+			std::ofstream yaml_out(yaml_path);
+			if (yaml_out.good())
+			{
+				uint64_t stats_bytes = std::filesystem::file_size(idxpair.second + ".stats");
+				uint64_t numseq_yaml = strs / 2;
+				yaml_out << std::fixed << std::setprecision(4);
+				yaml_out << "reference: " << idxpair.first << "\n";
+				yaml_out << "stats:\n";
+				yaml_out << "  numseq: "     << numseq_yaml           << "\n";
+				yaml_out << "  full_len: "   << full_len              << "\n";
+				yaml_out << "  part_num: "   << part_num              << "\n";
+				yaml_out << "  seed_win_len: " << opts.seed_win_len   << "\n";
+				yaml_out << "  background_freq: {A: " << background_freq[0]
+				         << ", C: " << background_freq[1]
+				         << ", G: " << background_freq[2]
+				         << ", T: " << background_freq[3] << "}\n";
+				yaml_out << "  files:\n";
+				yaml_out << "    stats: " << stats_bytes << "\n";
+				yaml_out << "parts:\n";
+				for (uint16_t pi = 0; pi < part_num; ++pi)
+				{
+					const auto& yp = yaml_parts[pi];
+					yaml_out << "  - part: "          << pi                    << "\n";
+					yaml_out << "    numseq_part: "    << yp.numseq_part       << "\n";
+					yaml_out << "    seq_part_size: "  << yp.seq_part_size     << "\n";
+					yaml_out << "    files:\n";
+					yaml_out << "      bursttrie_"     << pi << ".dat: " << yp.bursttrie_file_bytes << "\n";
+					yaml_out << "      pos_"           << pi << ".dat: " << yp.pos_file_bytes       << "\n";
+					yaml_out << "      kmer_"          << pi << ".dat: " << yp.kmer_file_bytes      << "\n";
+					yaml_out << "    kmer:\n";
+					yaml_out << "      num_nonzero: "  << yp.kmer_num_nonzero  << "\n";
+					yaml_out << "      total_count: "  << yp.kmer_total_count  << "\n";
+					yaml_out << "      max_count: "    << yp.kmer_max_count    << "\n";
+					yaml_out << "    pos:\n";
+					yaml_out << "      num_elements: "   << yp.pos_num_elements   << "\n";
+					yaml_out << "      total_positions: " << yp.pos_total_positions << "\n";
+					yaml_out << "      max_positions: "  << yp.pos_max_positions  << "\n";
+				}
+				yaml_out.close();
+				if (opts.is_verbose)
+					INFO_NS("      wrote index stats to ", yaml_path, "\n");
+			}
+			else
+			{
+				WARN("Could not create index stats file: ", yaml_path);
+			}
 
 			INFO_NS("  done.\n\n");
 		}

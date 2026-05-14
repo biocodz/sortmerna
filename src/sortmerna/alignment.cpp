@@ -38,6 +38,7 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include <sstream>
 #include <fstream>
 
+#include "parasail.h"
 #include "alignment.hpp"
 #include "read.hpp"
 #include "index.hpp"
@@ -50,10 +51,33 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 
 
 // forward
-s_align2 copyAlignment(s_align* pAlign);
 uint32_t inline findMinIndex(std::vector<s_align2>& alignv);
 uint32_t inline findMaxIndex(std::vector<s_align2>& alignv);
 std::pair<bool,bool> is_id_cov_pass(std::string& read_iseq, s_align2& alignment, References& refs, Runopts& opts);
+
+/* Build a parasail scoring matrix for the ACGTN alphabet with SortMeRNA's scoring scheme.
+   score_N is applied to all pairs involving N (index 4), which may differ from mismatch. */
+static parasail_matrix_t* smr_create_matrix(int match, int mismatch, int score_N)
+{
+    parasail_matrix_t* mat = parasail_matrix_create("ACGTN", match, mismatch);
+    for (int j = 0; j < 5; ++j)
+        parasail_matrix_set_value(mat, 4, j, score_N); // N row
+    for (int i = 0; i < 4; ++i)
+        parasail_matrix_set_value(mat, i, 4, score_N); // N column
+    return mat;
+}
+
+/* Decode an integer-encoded (0-4 = A,C,G,T,N) sequence slice to character form for parasail. */
+static std::string smr_decode_seq(const char* src, int len)
+{
+    static const char nt_decode[5] = {'A', 'C', 'G', 'T', 'N'};
+    std::string s(len, 'N');
+    for (int i = 0; i < len; ++i) {
+        const auto b = static_cast<uint8_t>(src[i]);
+        s[i] = nt_decode[b < 5u ? b : 4u];
+    }
+    return s;
+}
 
 void find_lis( deque<pair<uint32_t, uint32_t>>& a, vector<uint32_t>& b )
 {
@@ -98,12 +122,14 @@ void find_lis( deque<pair<uint32_t, uint32_t>>& a, vector<uint32_t>& b )
 } // ~find_lis
 
 void compute_lis_alignment( Read& read, Runopts& opts,
-							Index& index, References& refs, 
+							Index& index, References& refs,
 							Readstats& readstats, Refstats& refstats,
 							bool& search, uint32_t max_SW_score	)
 {
 	// true if SW alignment between the read and a candidate reference meets the threshold
 	bool is_aligned = false;
+
+	parasail_matrix_t* matrix = smr_create_matrix(opts.match, opts.mismatch, opts.score_N);
 
 	map<uint32_t, uint32_t> refs_kmer_count_map; // map of kmer hits on candidate references
 	//    |         |_number of k-mer hits on the reference
@@ -356,55 +382,74 @@ void compute_lis_alignment( Read& read, Runopts& opts,
 							}
 						}
 
-						// put read into 04 encoding before SSW
-						if (read.is03) 
+						// put read into 04 encoding before alignment
+						if (read.is03)
 							read.flip34();
-                       
-						// create profile for read
-						s_profile* profile = 0;
-						profile = ssw_init((int8_t*)(&read.isequence[0] + align_que_start), 
-                                                    (align_length - head - tail), 
-                                                    &read.scoring_matrix[0], 5, 2);
 
-						s_align* result = 0;
+						// decode integer-encoded slices to character form for parasail
+						const int qlen = static_cast<int>(align_length - head - tail);
+						const int rlen = static_cast<int>(align_length);
+						const std::string qchars = smr_decode_seq(&read.isequence[0] + align_que_start, qlen);
+						const std::string rchars = smr_decode_seq(
+							refs.buffer[max_ref].sequence.c_str() + align_ref_start - head, rlen);
 
-						result = ssw_align(
-							profile,
-							(int8_t*)refs.buffer[max_ref].sequence.c_str() + align_ref_start - head,
-							align_length,
-							opts.gap_open,
-							opts.gap_extension,
-							2,
-							refstats.minimal_score[index.index_num], // minimal_score_index_num
-							0,
-							0
-						);
+						parasail_profile_t* pprofile = parasail_profile_create_sat(
+							qchars.c_str(), qlen, matrix);
 
-						// deallocate memory for profile, no longer needed
-						if (profile != 0) 
-							init_destroy(&profile);
+						parasail_result_t* presult = parasail_sw_trace_striped_profile_sat(
+							pprofile, rchars.c_str(), rlen, opts.gap_open, opts.gap_extension);
 
-						// check alignment passes the threshold
-						is_aligned = (result != 0 && result->score1 > refstats.minimal_score[index.index_num]);
+						parasail_profile_free(pprofile);
+
+						const int pscore = parasail_result_get_score(presult);
+						is_aligned = (presult != nullptr && pscore > refstats.minimal_score[index.index_num]);
 						if (is_aligned)
 						{
-							if (result->score1 == max_SW_score) 
+							if (static_cast<uint32_t>(pscore) == max_SW_score)
 								++read.max_SW_count; // a max possible score has been found
 
-							// add the offset calculated by the LCS (from the beginning of the sequence)
-							// to the offset computed by SW alignment
-							result->ref_begin1 += (align_ref_start - head);
-							result->ref_end1 += (align_ref_start - head);
-							result->read_begin1 += align_que_start;
-							result->read_end1 += align_que_start;
-							result->readlen = read.sequence.length();
-							result->ref_num = max_ref;
+							const int32_t ref_offset = static_cast<int32_t>(align_ref_start - head);
+							const int32_t que_offset = static_cast<int32_t>(align_que_start);
 
-							result->index_num = index.index_num;
-							result->part = index.part;
-							result->strand = !read.reversed; // flag whether the alignment was done on a forward or reverse strand
-
-							auto alignment = copyAlignment(result); // new alignment
+							s_align2 alignment;
+							parasail_cigar_t* pcigar = parasail_result_get_cigar(
+								presult, qchars.c_str(), qlen, rchars.c_str(), rlen, matrix);
+							if (pcigar) {
+								// Normalise parasail CIGAR to BAM encoding expected by callers:
+								// parasail uses '='(op=7) for exact match and 'X'(op=8) for mismatch;
+								// all callers expect combined M(op=0). Merge adjacent runs.
+								// I(op=1) and D(op=2) are already in standard orientation.
+								for (int ci = 0; ci < pcigar->len; ++ci) {
+									uint32_t op  = pcigar->seq[ci] & 0xfu;
+									uint32_t len = pcigar->seq[ci] >> 4u;
+									if (op == 7 || op == 8) op = 0; // '='/'X' -> M
+									// merge consecutive M blocks from adjacent '='+'X' runs
+									if (op == 0 && !alignment.cigar.empty()
+											&& (alignment.cigar.back() & 0xfu) == 0)
+										alignment.cigar.back() += (len << 4u);
+									else
+										alignment.cigar.push_back((len << 4u) | op);
+								}
+								alignment.ref_begin1  = pcigar->beg_ref + ref_offset;
+								alignment.read_begin1 = pcigar->beg_query + que_offset;
+								parasail_cigar_free(pcigar);
+								// Parasail adds leading D ops when traceback exits through the query
+								// boundary (i<0): remaining reference-window positions are dumped as D.
+								// SW local alignment never genuinely starts with a deletion (negative
+								// score). Strip them and advance ref_begin1 past the head-extension bases.
+								while (!alignment.cigar.empty() && (alignment.cigar[0] & 0xfu) == 2) {
+									alignment.ref_begin1 += alignment.cigar[0] >> 4u;
+									alignment.cigar.erase(alignment.cigar.begin());
+								}
+							}
+							alignment.ref_end1  = parasail_result_get_end_ref(presult)   + ref_offset;
+							alignment.read_end1 = parasail_result_get_end_query(presult) + que_offset;
+							alignment.score1    = static_cast<uint16_t>(pscore);
+							alignment.readlen   = static_cast<uint32_t>(read.sequence.length());
+							alignment.ref_num   = max_ref;
+							alignment.index_num = index.index_num;
+							alignment.part      = index.part;
+							alignment.strand    = !read.reversed;
 
 							// read has not yet been mapped, set bit to true for this read
 							// (this is the Only place where read.is_hit can be modified)
@@ -415,16 +460,16 @@ void compute_lis_alignment( Read& read, Runopts& opts,
 								++readstats.reads_matched_per_db[index.index_num];
 							}
 
-							// if 'N == 0' or 'Not is_best' or 'is_best And read.alignments.size < N' => 
+							// if 'N == 0' or 'Not is_best' or 'is_best And read.alignments.size < N' =>
 							//   simply add the new alignment to read.alignments
 							if (opts.num_alignments == 0 || !opts.is_best || (opts.is_best && read.alignment.alignv.size() < opts.num_alignments))
 							{
 								read.alignment.alignv.emplace_back(alignment);
 								read.is_new_hit = true; // flag to store in DB
 							}
-							else if ( opts.is_best 
-									&& read.alignment.alignv.size() == opts.num_alignments 
-									&& read.alignment.alignv[read.alignment.min_index].score1 < result->score1 )
+							else if ( opts.is_best
+									&& read.alignment.alignv.size() == opts.num_alignments
+									&& read.alignment.alignv[read.alignment.min_index].score1 < pscore )
 							{
 								if (opts.is_best_id_cov) {
 									// TODO: new case to implement 20200703
@@ -445,7 +490,7 @@ void compute_lis_alignment( Read& read, Runopts& opts,
 
 									// if new_hit > max_hit: the old min_hit_idx becomes the new max_hit_idx
 									// only do if num_alignments > 1 i.e. max_idx != min_idx
-									if (result->score1 > read.alignment.alignv[max_score_index].score1 && read.alignment.alignv.size() > 1) {
+									if (pscore > read.alignment.alignv[max_score_index].score1 && read.alignment.alignv.size() > 1) {
 										read.alignment.max_index = min_score_index; // new max index
 										read.alignment.min_index = findMinIndex(read.alignment.alignv); // new min index
 									}
@@ -471,13 +516,8 @@ void compute_lis_alignment( Read& read, Runopts& opts,
 							// continue to next read (no need to collect more seeds using another pass)
 							search = false;
 						}//~if aligned
-						
-						// free alignment info
-						if(result != 0)
-						{
-							free(result);
-							result = 0;
-						}
+
+						parasail_result_free(presult);
 					}//~if LIS long enough                               
 #ifdef HEURISTIC1_OFF
 				} while ((hits_on_ref_iter == hits_per_ref.end()) && (++list_n < lis_arr.size()));
@@ -506,26 +546,9 @@ void compute_lis_alignment( Read& read, Runopts& opts,
 			}
 		}//~for all matching k-mers on a reference
 	}//~for all reference candidates
+
+	parasail_matrix_free(matrix);
 } // ~compute_lis_alignment
-
-s_align2 copyAlignment(s_align* pAlign)
-{
-	s_align2 ret_align;
-	for (int i = 0; i < pAlign->cigarLen; i++)
-		ret_align.cigar.push_back(*pAlign->cigar++);
-	ret_align.index_num = pAlign->index_num;
-	ret_align.part = pAlign->part;
-	ret_align.readlen = pAlign->readlen;
-	ret_align.read_begin1 = pAlign->read_begin1;
-	ret_align.read_end1 = pAlign->read_end1;
-	ret_align.ref_begin1 = pAlign->ref_begin1;
-	ret_align.ref_end1 = pAlign->ref_end1;
-	ret_align.ref_num = pAlign->ref_num;
-	ret_align.score1 = pAlign->score1;
-	ret_align.strand = pAlign->strand;
-
-	return ret_align;
-}
 
 /* 
  * find the index of the alignment with the smallest score 

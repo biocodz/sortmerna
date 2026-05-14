@@ -16,11 +16,7 @@ string(TIMESTAMP GIT_DATE_TIME "%Y/%m/%d %H:%M:%S" UTC)
 # Prepare Version information
 #
 if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-  if(WIN32)
-    execute_process(COMMAND $ENV{COMSPEC} /C ${GIT_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR} rev-parse HEAD OUTPUT_VARIABLE GIT_SHA)
-  else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR} rev-parse HEAD OUTPUT_VARIABLE GIT_SHA)
-  endif()
+  execute_process(COMMAND ${GIT_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR} rev-parse HEAD OUTPUT_VARIABLE GIT_SHA)
 else()
   set(GIT_SHA 0)
 endif()
@@ -52,8 +48,6 @@ message("CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
 message("CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG}")
 
 set(EXTERNAL_DEPS ${CMAKE_SOURCE_DIR}/3rdparty CACHE PATH "Installation directory for 3rd party dependencies")
-set(DIRENTWIN_URL https://github.com/tronkko/dirent CACHE STRING "Dirent-Windows interface GitHub URL")
-set(DIRENTWIN_HOME ${EXTERNAL_DEPS}/dirent CACHE PATH "Dirent-Windows interface installation directory")
 
 option(WITH_TESTS "Select whether to build tests" OFF)
 
@@ -67,29 +61,14 @@ endif()
 message("CMAKE_CXX_FLAGS_RELEASE: ${CMAKE_CXX_FLAGS_RELEASE}")
 message("EXTRA_CXX_FLAGS_RELEASE: ${EXTRA_CXX_FLAGS_RELEASE}")
 
-# download dirent. Only dirent.h used from this project - no need to build
-if(WIN32 AND NOT EXISTS ${DIRENTWIN_HOME})
-	execute_process(COMMAND git clone --depth 1 ${DIRENTWIN_URL}
-		WORKING_DIRECTORY ${EXTERNAL_DEPS}
-)
-endif()
-
 # build build_version
 set(BUILD_VERSION_CPP ${CMAKE_BINARY_DIR}/build_version.cpp)
 configure_file(src/util/build_version.cpp.in ${BUILD_VERSION_CPP} @ONLY)
 add_library(build_version STATIC ${BUILD_VERSION_CPP})
 target_include_directories(build_version PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-## build cmph
-add_subdirectory(${EXTERNAL_DEPS}/cmph)
-
 ## build alp
 add_subdirectory(${EXTERNAL_DEPS}/alp)
-
-## build winapi
-if(WIN32)
-	add_subdirectory(${CMAKE_SOURCE_DIR}/src/winapi)
-endif()
 
 ## build sortmerna
 add_subdirectory(${CMAKE_SOURCE_DIR}/src/sortmerna)

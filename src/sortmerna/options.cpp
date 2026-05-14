@@ -983,19 +983,20 @@ void Runopts::opt_task(const std::string &val)
 {
 	int task_num = std::stoi(val);
 
-	if (task_num > 4)
+	if (task_num > 5)
 	{
-		ERR("Option '", OPT_TASK, "' can only take values in range [0..4] Provided value is [", task_num , "'");
+		ERR("Option '", OPT_TASK, "' can only take values in range [0..5] Provided value is [", task_num , "'");
 		exit(EXIT_FAILURE);
 	}
 
 	switch (task_num)
 	{
-	case 0: alirep = align; break;
-	case 1: alirep = summary; break;
-	case 2: alirep = report; break;
-	case 3: alirep = alnsum; break;
-	case 4: alirep = all; break;
+	case 0: task = align; break;
+	case 1: task = summary; break;
+	case 2: task = report; break;
+	case 3: task = align_summary; break;
+	case 4: task = all; break;
+	case 5: task = index_only; break;
 	}
 } // ~Runopts::opt_task
 
@@ -1207,14 +1208,12 @@ void Runopts::opt_index(const std::string& val)
 {
 	if (val.size() > 0) {
 		auto ii = std::stoi(val);
-		if (!(ii == 0 || ii == 1 || ii == 2)) {
-			WARN("'", OPT_INDEX, "' can only take integer values: [", 0, ", ", 1, ", ", 2, "]. Provided value: ", val, " Using default: ", findex);
+		if (!(ii == 0 || ii == 1)) {
+			WARN("'", OPT_INDEX, "' can only take integer values: [", 0, ", ", 1, "]. Provided value: ", val, " Using default: ", findex);
 		}
 		else {
 			INFO("using '", OPT_INDEX, "' with specified value ", ii);
 			findex = ii;
-			if (findex == 1)
-				alirep = ALIGN_REPORT::index_only;
 		}
 	}
 	else {
@@ -1301,7 +1300,7 @@ void Runopts::validate_kvdbdir()
 		if (std::filesystem::is_empty(kvdbdir))
 		{
 			// dir exists and empty -> use
-			if (ALIGN_REPORT::summary == alirep || ALIGN_REPORT::report == alirep)
+			if (TASK::summary == task || TASK::report == task)
 			{
 				INFO("KVDB directory: " , std::filesystem::absolute(kvdbdir) , " is empty. OK to use.");
 			}
@@ -1310,7 +1309,7 @@ void Runopts::validate_kvdbdir()
 		{
 			// TODO: Store some metadata in DB to verify the alignment.
 			// kvdb.verify()
-			if (ALIGN_REPORT::align == alirep || ALIGN_REPORT::all == alirep || ALIGN_REPORT::alnsum == alirep)
+			if (TASK::align == task || TASK::all == task || TASK::align_summary == task)
 			{
 				// if (kvdb.verify()) // TODO
 				// output the listing
@@ -1425,10 +1424,6 @@ void Runopts::process(int argc, char**argv, bool dryrun)
 		fprintf(stderr, "\n  %sERROR%s: sysctl (main.cpp)\n", RED, COLOFF);
 		exit(EXIT_FAILURE);
 	}
-#endif
-
-#if defined(_WIN32)
-	_setmode(_fileno(stderr), _O_BINARY);
 #endif
 
 	if (argc == 1)

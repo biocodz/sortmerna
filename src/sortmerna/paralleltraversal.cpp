@@ -59,11 +59,7 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include "readsqueue.hpp"
 
 
-#if defined(_WIN32)
-#define O_SMR_READ_BIN O_RDONLY | O_BINARY
-#else
 #define O_SMR_READ_BIN O_RDONLY
-#endif
 
 // forward
 int clear_dir(std::string dpath);

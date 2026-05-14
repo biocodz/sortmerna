@@ -43,14 +43,7 @@ along with SortMeRNA. If not, see <http://www.gnu.org/licenses/>.
 #include <cstring>
 #include <dirent.h>
 #include <algorithm>
-
-#if defined(_WIN32)
-	#include <direct.h>
-	#define GetCurrentDir _getcwd
-#else
-	#include <unistd.h>
-	#define GetCurrentDir getcwd
-#endif
+#include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -153,14 +146,7 @@ bool dirExists(std::string dpath)
 std::string get_user_home()
 {
 	std::string homedir;
-#if defined(_WIN32)
-	homedir.append(getenv("USERPROFILE"));
-	std::replace(homedir.begin(), homedir.end(), '\\', '/');
-	//homedir.append(getenv("HOMEDRIVE"));
-	//homedir.append(getenv("HOMEPATH"));
-#else
 	homedir.append(getenv("HOME"));
-#endif
 	return homedir;
 }
 
@@ -202,7 +188,7 @@ std::string get_current_dir()
 	std::string path;
 	char cCurrentPath[FILENAME_MAX];
 
-	if (!GetCurrentDir(cCurrentPath, sizeof(cCurrentPath)))
+	if (!getcwd(cCurrentPath, sizeof(cCurrentPath)))
 	{
 		std::cerr << "[" << __func__ << ":" << __LINE__ << "]" << " ERROR getting current directory: [" << errno << "]" << std::endl;
 	}

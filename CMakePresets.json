@@ -15,6 +15,7 @@
                 "WITH_TESTS": true,
                 "ZLIB_ROOT": "${sourceDir}/build/3rdparty/zlib/dist",
                 "ROCKSDB_DIST": "${sourceDir}/build/3rdparty/rocksdb/dist",
+                "PARASAIL_DIST": "${sourceDir}/build/3rdparty/parasail/dist",
                 "CONCURRENTQUEUE_HOME": "${sourceDir}/3rdparty/concurrentqueue",
                 "INDEXED_BZIP2_HOME": "${sourceDir}/3rdparty/indexed_bzip2/src",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/dist"
@@ -44,23 +45,6 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
-        },
-        {
-            "name": "WIN_release",
-            "inherits": "common",
-            "cacheVariables": {
-                "DIRENTWIN_HOME": "${sourceDir}/3rdparty/dirent",
-                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
-                "CPACK_BINARY_NSIS": false,
-                "CPACK_BINARY_7Z": true,
-                "CPACK_BINARY_ZIP": false,
-                "CPACK_SOURCE_7Z": true,
-                "CPACK_SOURCE_ZIP": false
-            }
-        },
-        {
-            "name": "WIN_debug",
-            "inherits": "WIN_release"
         }
     ],
     "buildPresets": [
@@ -73,16 +57,6 @@
             "name": "LIN_debug",
             "configuration": "Debug",
             "configurePreset": "LIN_debug"
-        },
-        {
-            "name": "WIN_release",
-            "configuration": "Release",
-            "configurePreset": "WIN_release"
-        },
-        {
-            "name": "WIN_debug",
-            "configuration": "Debug",
-            "configurePreset": "WIN_debug"
         }
     ]
 }
