@@ -1903,7 +1903,7 @@ void about()
 
 	ss << std::endl
 		<< "  Program:      SortMeRNA version " << SORTMERNA_MAJOR << "." << SORTMERNA_MINOR << "." << SORTMERNA_PATCH << std::endl
-		<< "  Copyright:    2016-2020 Clarity Genomics BVBA:" << std::endl
+		<< "  Copyright:    2016-2026 Clarity Genomics BVBA:" << std::endl
 		<< "                Turnhoutseweg 30, 2340 Beerse, Belgium" << std::endl
 		<< "                2014-2016 Knight Lab:" << std::endl
 		<< "                Department of Pediatrics, UCSD, La Jolla" << std::endl
