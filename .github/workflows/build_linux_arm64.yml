@@ -16,7 +16,7 @@ on:
 
 concurrency:
   cancel-in-progress: true
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: build-linux-arm64-${{ github.ref }}
 
 permissions:
   contents: read
