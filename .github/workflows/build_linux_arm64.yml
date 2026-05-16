@@ -1,0 +1,77 @@
+name: build on Linux ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag or ref to build (default: current branch)'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Tag or ref to build'
+        required: false
+        type: string
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux-arm64:
+    name: Build on Linux ARM64
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: git checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.tag || github.ref }}
+
+    - name: Build
+      uses: uraimo/run-on-arch-action@v2
+      with:
+        arch: aarch64
+        distro: ubuntu20.04
+        githubToken: ${{ github.token }}
+        dockerRunArgs: |
+          --volume "${PWD}:/sortmerna"
+        install: |
+          apt-get update -q -y
+          apt-get install -q -y gcc g++ wget file python3 git
+          wget https://github.com/conda-forge/miniforge/releases/download/23.11.0-0/Mambaforge-23.11.0-0-Linux-aarch64.sh
+          bash Mambaforge-23.11.0-0-Linux-aarch64.sh -b
+        run: |
+          set -x
+          export PATH=${HOME}/mambaforge/bin:$PATH
+          eval "$(conda shell.bash activate)"
+          conda install -c conda-forge -y cmake pyyaml jinja2 requests ninja
+          cd /sortmerna
+          python3 setup.py all
+          echo "=== listing dist/ ==="
+          ls -l ./dist
+
+    - name: rename artifacts with -aarch64 suffix
+      run: |
+        cd dist
+        for f in sortmerna*Linux.deb sortmerna*Linux.sh sortmerna*Linux.tar.gz; do
+          [ -f "$f" ] || continue
+          new="${f%-Linux.*}-Linux-aarch64.${f##*-Linux.}"
+          mv "$f" "$new"
+          echo "renamed: $f -> $new"
+        done
+        ls -l
+
+    - name: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-arm64
+        retention-days: 3
+        path: |
+          dist/sortmerna*Linux-aarch64.deb
+          dist/sortmerna*Linux-aarch64.sh
+          dist/sortmerna*Linux-aarch64.tar.gz
