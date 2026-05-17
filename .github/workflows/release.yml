@@ -79,6 +79,25 @@ jobs:
           (cd assets && sha256sum *) | tee SHA256SUMS.txt
           mv SHA256SUMS.txt assets/
 
+      - name: Fetch tag annotation for release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          # gh release create's --notes-from-tag needs a local git repo, so
+          # it can't be combined with --repo. Fetch the annotated tag's
+          # message via the API and pass via --notes-file instead.
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" --jq '.object.sha')
+          tag_type=$(gh api "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" --jq '.object.type')
+          if [ "$tag_type" = "tag" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.message' > tag_notes.md
+          else
+            echo "Release $TAG" > tag_notes.md
+            echo "(lightweight tag - no annotation)" >> tag_notes.md
+          fi
+          echo "=== release notes ==="
+          cat tag_notes.md
+
       - name: Create / update draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,6 +110,6 @@ jobs:
             echo "Creating draft release $TAG"
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
               --title "SortMeRNA $TAG" \
-              --notes-from-tag \
+              --notes-file tag_notes.md \
               assets/*
           fi
