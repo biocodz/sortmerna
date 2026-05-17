@@ -24,7 +24,7 @@ permissions:
 jobs:
   build-linux-arm64:
     name: Build on Linux ARM64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     steps:
     - name: git checkout
@@ -32,28 +32,26 @@ jobs:
       with:
         ref: ${{ inputs.tag || github.ref }}
 
-    - name: Build
-      uses: uraimo/run-on-arch-action@v2
-      with:
-        arch: aarch64
-        distro: ubuntu20.04
-        githubToken: ${{ github.token }}
-        dockerRunArgs: |
-          --volume "${PWD}:/sortmerna"
-        install: |
-          apt-get update -q -y
-          apt-get install -q -y gcc g++ wget file python3 git
-          wget https://github.com/conda-forge/miniforge/releases/download/23.11.0-0/Mambaforge-23.11.0-0-Linux-aarch64.sh
-          bash Mambaforge-23.11.0-0-Linux-aarch64.sh -b
-        run: |
-          set -x
-          export PATH=${HOME}/mambaforge/bin:$PATH
-          eval "$(conda shell.bash activate)"
-          conda install -c conda-forge -y cmake pyyaml jinja2 requests ninja
-          cd /sortmerna
-          python3 setup.py all
-          echo "=== listing dist/ ==="
-          ls -l ./dist
+    - name: install gcc-11
+      run: |
+        sudo apt update
+        sudo apt install -y gcc-11 g++-11
+
+    - name: set gcc-11 as default
+      run: |
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
+
+    - name: verify gcc
+      run: gcc --version
+
+    - name: build
+      run: |
+        eval "$(conda shell.bash activate)"
+        conda install -c conda-forge -y pyyaml jinja2 requests ninja cmake
+        python setup.py all
+        echo "=== listing dist/ ==="
+        ls -l ./dist
 
     - name: rename artifacts with -aarch64 suffix
       run: |
