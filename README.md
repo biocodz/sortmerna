@@ -8,8 +8,7 @@ SortMeRNA takes as input files of reads (fasta, fastq, fasta.gz, fastq.gz) and o
 rRNA database file(s), and sorts apart aligned and rejected reads into two files. SortMeRNA works
 with Illumina, Ion Torrent and PacBio data, and can produce SAM and BLAST-like alignments.
 
-SortMeRNA is also available through [QIIME v1.9.1](http://qiime.org) and
-the [nf-core RNA-Seq pipeline v.3.9](https://nf-co.re/rnaseq/3.9).
+SortMeRNA is also available through the [nf-core RNA-Seq pipeline v.3.26.0](https://nf-co.re/rnaseq/3.26.0).
 
 ## Table of Contents
 
@@ -233,6 +232,8 @@ Kopylova E., Noé L. and Touzet H., "SortMeRNA: Fast and accurate filtering of r
 ## Contributors
 
 See [AUTHORS](./AUTHORS) for a list of contributors to this project.
+
+Maintained by the team at [Clarity Genomics Inc](www.clarity-genomics.com) and [Centre de Recherche en Informatique, Signal et Automatique de Lille](https://www.cristal.univ-lille.fr/).
 
 ## Third-party dependencies
 
